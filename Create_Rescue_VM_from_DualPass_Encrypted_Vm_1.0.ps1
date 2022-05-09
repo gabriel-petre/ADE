@@ -1,4 +1,4 @@
-﻿ Param (
+ Param (
 
    [Parameter(Mandatory = $true)] [String] $VmName,
    [Parameter(Mandatory = $true)] [String] $VMRgName,
@@ -13,14 +13,15 @@
 ) 
 
 # Start to measure execution time of script
-[int]$startMin = (Get-Date).Minute
+$StartTimeMinute = (Get-Date).Minute
+$StartTimeSecond = (Get-Date).Second
 
 Write-Host ""
 Write-Warning "Please use a fresh opened page of Azure Cloud Shell before runnig the script, since Azure Cloud Shell has a timeout period."
 Write-Warning "If Azure Cloud Shell times out while running the script, the script will stop at the time of the timeout."
 Write-Host ""
-Write-Host "Starting to write in log file '$HOME/RestoreScript_Execution_log.txt' for troubleshooting purposes"
-Start-Transcript -Path "$HOME/RestoreScript_Execution_log.txt" -Append | Out-Null
+Write-Host "Starting to write in log file '$HOME/CreateRescueVMScript_Execution_log.txt' for troubleshooting purposes"
+Start-Transcript -Path "$HOME/CreateRescueVMScript_Execution_log.txt" -Append | Out-Null
 Write-Host ""
 
 #Write-Host "Disabling warning messages to users that the cmdlets used in this script may be changed in the future." -ForegroundColor Yellow
@@ -43,6 +44,33 @@ $currentUser = $ctx.Account.Id
 $currentSubscription = (Get-AzContext).Subscription.Name
 Write-host "Subscription '$currentSubscription' was selected" -ForegroundColor green
 write-host ""
+
+######################################################
+#          Testing if VM exist and get variables     #
+######################################################
+
+#VM object
+$error.clear()
+#Test if specified VM exists and also storing VM object in $vm variable
+Try {$vm = Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -ErrorAction SilentlyContinue}
+
+catch {}
+
+if ($error)
+{
+Write-Host ""
+Write-Host "VM '$VmName' was not found in resource group '$VMRgName'" -ForegroundColor Red
+Write-Host ""
+Write-Host ""
+Write-Host "Log file '$HOME/CreateRescueVMScript_Execution_log.txt' was successfully saved"
+Write-Host ""
+Stop-Transcript | Out-Null
+Write-host 
+Write-Host "Script will exit"
+Exit
+}
+$error.clear()
+
 
 # Get Keyvault Name from secret URL
 $vm = Get-AzVm -ResourceGroupName $VMRgName -Name $vmName
@@ -169,10 +197,14 @@ if ($error)
     Write-Host ""
     Write-Warning "Permissions could NOT be set for user: $currentUser"
     # Calculate elapsed time
-    [int]$endMin = (Get-Date).Minute
-    $ElapsedTime =  $([int]$endMin - [int]$startMin)
+    $EndTimeMinute = (Get-Date).Minute
+    $EndTimeSecond = (Get-Date).Second
+    $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+    $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+    $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+    $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
     Write-Host ""
-    Write-Host "Script execution time: $ElapsedTime minutes"
+    Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
 
     Write-Host ""
     Write-Host "Log file '$HOME/log.txt' was successfully saved"
@@ -255,10 +287,14 @@ if ($error)
         {
 
         # Calculate elapsed time
-        [int]$endMin = (Get-Date).Minute
-        $ElapsedTime =  $([int]$endMin - [int]$startMin)
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
         Write-Host ""
-        Write-Host "Script execution time: $ElapsedTime minutes"
+        Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
 
         Write-Host ""
         Write-Host "Log file '$HOME/log.txt' was successfully saved"
@@ -308,10 +344,16 @@ if ($error)
     Write-Host ""
     Write-Warning "'Key Vault Administrator' role could not be assigned for user: $currentUser on Keyvault '$keyVaultName'"
     # Calculate elapsed time
-    [int]$endMin = (Get-Date).Minute
-    $ElapsedTime =  $([int]$endMin - [int]$startMin)
+
+    # Calculate elapsed time
+    $EndTimeMinute = (Get-Date).Minute
+    $EndTimeSecond = (Get-Date).Second
+    $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+    $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+    $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+    $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
     Write-Host ""
-    Write-Host "Script execution time: $ElapsedTime minutes"
+    Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
 
     Write-Host ""
     Write-Host "Log file '$HOME/log.txt' was successfully saved"
@@ -466,12 +508,68 @@ $DiskName = $vm.StorageProfile.OsDisk.Name
 $diskId = $vm.StorageProfile.OsDisk.ManagedDisk.Id
 $location = $vm.Location
 $snapshotConfig =  New-AzSnapshotConfig -SourceUri $diskId -Location $location -CreateOption copy -SkuName Standard_LRS
-$snapshotName = ('snap_of_' + $DiskName)
+
+# Starting number for the copy
+$i = 1 
+
+# Name of the snapshop of the disk
+$snapshotName = ('snap_' + $i + '_' + $DiskName)
 $snapshotNameLength = $snapshotName.Length
+
     If ($snapshotNameLength -gt "50")
     {
     $snapshotName = $snapshotName.Substring(0,$snapshotName.Length-20)
     }
+
+$checkIFAnotherSnapIsPresent = Get-AzSnapshot | ?{$_.Name -eq $snapshotName}
+
+####
+if ($checkIFAnotherSnapIsPresent -eq $null) #if a snapshot with the same name does not exists, use values
+
+{
+# Name of the snapshop of the disk
+$snapshotName = ('snap_' + $i + '_' + $DiskName)
+$snapshotNameLength = $snapshotName.Length
+
+    If ($snapshotNameLength -gt "50")
+    {
+    $snapshotName = $snapshotName.Substring(0,$snapshotName.Length-20)
+    }
+
+    Write-Host ""
+    Write-Host "A snapshot of the disk with the name '$snapshotName' will be created" -ForegroundColor green
+}
+
+
+if ($checkIFAnotherSnapIsPresent -ne $null) #if a snapshot with the same name already exists, add an increment of $i to name of the snapshot
+
+{
+    do{
+    # check if a snapshot with the same name already exists
+    Write-Host ""
+    Write-Host "A snapshot with the same name '$snapshotName' already exists. Searching for an available name..." -ForegroundColor Yellow
+    $i++
+
+    #Create the names of the snapshot
+    $snapshotName = ('snap_' + $i + '_' + $DiskName)
+    
+    # reduce the name of the snapshot
+    $snapshotNameLength = $snapshotName.Length
+    If ($snapshotNameLength -gt "50")
+    {
+    $snapshotName = $snapshotName.Substring(0,$snapshotName.Length-20)
+    }
+
+    # check again if the snapshot exists with the same name
+    $checkIFAnotherSnapIsPresent = Get-AzSnapshot | ?{$_.Name -eq $snapshotName}
+    }until ($checkIFAnotherSnapIsPresent -eq $null)
+
+    Write-Host ""
+    Write-Host "A snapshot of the disk with the name '$snapshotName' will be created" -ForegroundColor green
+}
+
+
+# Creating snapshot
 New-AzSnapshot -Snapshot $snapshotConfig -SnapshotName $snapshotName -ResourceGroupName $RescueVmRg | Out-Null
 
 #Create a managed disk from snapshot
@@ -479,12 +577,63 @@ $Osdisk = Get-AzDisk | ?{($_.ManagedBy -eq $vm.id) -and ($_.name -eq $OSDiskName
 $OsdiskRg = $Osdisk.ResourceGroupName
 $OsdiskType = $Osdisk.Sku.Name
 $Snapshot = Get-AzSnapshot -SnapshotName $snapshotName -ResourceGroupName $RescueVmRg
-$NewDiskName= ('copy_of-' + $DiskName)
+
+# Name of the copy of the disk
+$NewDiskName = ('fixed_' + $i + '_'+ $DiskName)
 $NewDiskNameLength = $NewDiskName.Length
+
     If ($NewDiskNameLength -gt "50")
     {
     $NewDiskName = $NewDiskName.Substring(0,$NewDiskName.Length-10)
     }
+
+# check IF Another Copy fo the disk with the same name already exists
+$checkIFAnotherCopyIsPresent = Get-AzDisk | ?{$_.Name -eq $NewDiskName} 
+
+if ($checkIFAnotherCopyIsPresent -eq $null) #if a disk with the same name does not exists, use values
+
+{
+
+# Name of the copy of the disk
+$NewDiskName = ('fixed_' + $i + '_'+ $DiskName)
+$NewDiskNameLength = $NewDiskName.Length
+
+    If ($NewDiskNameLength -gt "50")
+    {
+    $NewDiskName = $NewDiskName.Substring(0,$NewDiskName.Length-10)
+    }
+
+    Write-Host ""
+    Write-Host "A copy of the disk with the name '$NewDiskName' will be created" -ForegroundColor yellow
+}
+
+if ($checkIFAnotherCopyIsPresent -ne $null) #if a disk with the same name already exists, add an increment of $i to name of thi disk
+
+{
+    do{
+    # check if a disk with the same name already exists
+    Write-Host ""
+    Write-Host "A disk with the same name '$NewDiskName' already exists. Searching for an available name..." -ForegroundColor Yellow
+    $i++
+
+    #Create the names of the disk
+    $NewDiskName = ('fixed_' + $i + '_'+ $DiskName)
+
+    # reduce the name of the Disk
+    $NewDiskNameLength = $NewDiskName.Length
+    If ($NewDiskNameLength -gt "50")
+        {
+        $NewDiskName = $NewDiskName.Substring(0,$NewDiskName.Length-10)
+        }
+
+    # check again if the disks exists with the same name
+    $checkIFAnotherCopyIsPresent = Get-AzDisk | ?{$_.Name -eq $NewDiskName}
+    }until ($checkIFAnotherCopyIsPresent -eq $null)
+
+    Write-Host ""
+    Write-Host "A copy of the disk with the name '$NewDiskName' will be created" -ForegroundColor yellow
+}
+
 
 #checking if original OS disk was placed in a specific zone
 $OsdiskZone = $Osdisk.Zones
@@ -496,6 +645,8 @@ write-host "Creating a managed disk in zone '$OsdiskZone' from snapshot of the O
 $NewOSDiskConfig = New-AzDiskConfig -AccountType $OsdiskType -Location $Location -Zone $OsdiskZone -CreateOption Copy -SourceResourceId $Snapshot.Id
 #create disk
 $newOSDisk=New-AzDisk -Disk $NewOSDiskConfig -ResourceGroupName $RescueVmRg -DiskName $NewDiskName | Out-Null
+Write-Host ""
+Write-Host "A copy of the disk with the name '$NewDiskName' was created in zone '$OsdiskZone' from snapshot of the OS disk of VM '$VmName'" -ForegroundColor green
 }
 
 if ($OsdiskZone -eq $null)
@@ -505,19 +656,14 @@ write-host "Creating a managed disk from snapshot of the OS disk of VM '$VmName'
 $NewOSDiskConfig = New-AzDiskConfig -AccountType $OsdiskType -Location $Location -CreateOption Copy -SourceResourceId $Snapshot.Id
 #create disk
 $newOSDisk=New-AzDisk -Disk $NewOSDiskConfig -ResourceGroupName $RescueVmRg -DiskName $NewDiskName | Out-Null
+Write-Host ""
+Write-Host "A copy of the disk with the name '$NewDiskName' was created from snapshot of the OS disk of VM '$VmName'" -ForegroundColor green
 }
-
-#Getting disk ID:
-$DiskCopyID = $newOSDisk.id
-
-#Adding disk ID for this copy to the encryption file that will be used in the restore process
-("DiskCopyID = " + "$DiskCopyID") >>  EncryptionSettings_VM_$VmName.txt
 
 #Deleting the snapshot
 Write-Host ""
 write-host "Deleting the snapshot of the OS disk of VM: '$VmName'"
 Remove-AzSnapshot -ResourceGroupName $RescueVmRg -SnapshotName $snapshotName -Force | Out-Null
-
 
 #Remove the encryption settings from the disk and attach it to the testvm using the PowerShell commands
 Write-Host ""
@@ -568,8 +714,94 @@ Write-Host "Operating system is Windows"
 #Set Hostname and Credentials
 $VirtualMachine = Set-AzVMOperatingSystem -VM $vmConfig -Windows -ComputerName "$HostnameRescueVM" -Credential $Credential -ProvisionVMAgent
 
-#Set source Marketplace image
-$VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName "MicrosoftWindowsServer" -Offer "WindowsServer" -Skus "2016-datacenter" -Version "14393.4350.2104091630" # Tested Versions: "14393.4350.2104091630", "14393.5066.220403"
+#Windows Server 2016
+$Win2016DefaultPublisher = "MicrosoftWindowsServer"
+$Win2016DefaultOffer = "WindowsServer"
+$Win2016DefaultSku = "2016-Datacenter"
+$Win2016DefaultVersion = "14393.4350.2104091630" # Tested Versions: "14393.4350.2104091630", "14393.5066.220403"
+
+#Windows Server 2019
+$Win2019DefaultPublisher = "MicrosoftWindowsServer"
+$Win2019DefaultOffer = "WindowsServer"
+$Win2019DefaultSku = "2019-Datacenter"
+$Win2019DefaultVersion = "latest"
+
+#Windows Server 2022
+$Win2022DefaultPublisher = "MicrosoftWindowsServer"
+$Win2022DefaultOffer = "WindowsServer"
+$Win2022DefaultSku = "2022-Datacenter"
+$Win2022DefaultVersion = "latest"
+
+
+function DefaultOsWinMenu
+    {
+    param (
+        [string]$Title = 'Image selection Menu for creating Rescue VM'
+    )
+
+    Write-Host "========================================================================================== $Title ============================================================================"
+    Write-Host ""
+    Write-Host "1: Create VM '$RescueVmName' from generation 1 Windows Server 2016 default image" 
+    Write-Host ""
+    Write-Host "2: Create VM '$RescueVmName' from generation 1 Windows Server 2019 default image"
+    Write-Host ""
+    Write-Host "3: Create VM '$RescueVmName' from generation 1 Windows Server 2022 default image"
+    Write-Host ""
+    Write-Host "Q: Press 'Q' to quit."
+    Write-Host ""
+    Write-Host "==================================================================================================================================================================================================================="
+
+   }
+
+ do{
+     Write-Host ""
+     #call 'DefaultOsWinMenu' function
+     DefaultOsWinMenu
+     $selection = Read-Host "Please make a selection"
+     Write-Host ""
+     switch ($selection)
+     {
+           '1' {Write-host "You chose option #1. VM '$RescueVmName' will be created from generation 1 Windows Server 2016 default image" -ForegroundColor green}
+           '2' {Write-host "You chose option #2. VM '$RescueVmName' will be created from generation 1 Windows Server 2019 default image" -ForegroundColor green}
+           '3' {Write-host "You chose option #2. VM '$RescueVmName' will be created from generation 1 Windows Server 2022 default image" -ForegroundColor green}
+
+     }
+
+   } until ($selection -eq '1' -or $selection -eq '2' -or $selection -eq '3' -or $selection -eq 'q')
+
+        if ($selection -eq 'q')
+
+         {
+         Write-Host "Script will exit" -ForegroundColor Green
+         Write-Host ""
+         exit
+         }
+
+     if ($selection -eq "1") # Rescue VM will be created from Windows Server 2016 default image
+
+         {
+
+        #Set source Marketplace image Windows Server 2016
+        $VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName $Win2016DefaultPublisher -Offer $Win2016DefaultOffer -Skus $Win2016DefaultSku -Version $Win2016DefaultVersion
+
+        }
+
+     if ($selection -eq "2") # Rescue VM will be created from Windows Server 2019 default image
+
+         {
+
+        #Set source Marketplace image Windows Server 2019
+        $VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName $Win2019DefaultPublisher -Offer $Win2019DefaultOffer -Skus $Win2019DefaultSku -Version $Win2019DefaultVersion 
+        }
+
+     if ($selection -eq "3") # Rescue VM will be created from Windows Server 2022 default image
+
+         {
+
+        #Set source Marketplace image Windows Server 2022
+        $VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName $Win2022DefaultPublisher -Offer $Win2022DefaultOffer -Skus $Win2022DefaultSku -Version $Win2022DefaultVersion 
+        }
+
 }
 
 
@@ -625,7 +857,7 @@ function DefaultMenu
         [string]$Title = 'Image selection Menu for creating Rescue VM'
     )
 
-    Write-Host "========================================================================================== $Title ============================================================="
+    Write-Host "========================================================================================== $Title ============================================================================"
     Write-Host ""
     Write-Host "1: Create VM '$RescueVmName' from generation 1 Ubuntu default image (Ubuntu 18.04-LTS - latest_version)" 
     Write-Host ""
@@ -808,7 +1040,7 @@ function DefaultOsOrMenu
     % {Write-Host ""}
     % {Write-Host "[Q]" -ForegroundColor Red -NoNewline ; Write-host ". To quit."}
     % {Write-Host ""}
-    $selection = Read-Host "Please select the SKU Number - Valid numbers are 0 - $($SKUs.count -1), to  Q to quit"
+    $selection = Read-Host "Please select the SKU Number - Valid numbers are 0 - $($SKUs.count -1), Q to quit"
 
     If ($selection -eq 'Q') { 
         Clear-Host
@@ -900,12 +1132,24 @@ Add-AzVMDataDisk -VM $VirtualMachine -ManagedDiskId $datadisk.Id -Name $NewDiskN
 
 Write-Host ""
 Write-Host "Creating VM '$RescueVmName'..."
+ 
+ if ($WindowsOrLinux -eq "Windows")
+{
+# Create the VM.
+New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine -DisableBginfoExtension | Out-Null
+}
 
+if ($WindowsOrLinux -eq "Linux")
+{
 # Create the VM.
 New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine | Out-Null
+}
 
 #Wait until VM guest agent becomes ready
-do {Start-Sleep -Seconds 5$VMagentStuatus = (Get-AzVM -ResourceGroupName $RescueVmRg -Name $RescueVmName -Status).VMagent.Statuses.DisplayStatus} until ($VMagentStuatus -eq "Ready")
+do {
+Start-Sleep -Seconds 5
+$VMagentStuatus = (Get-AzVM -ResourceGroupName $RescueVmRg -Name $RescueVmName -Status).VMagent.Statuses.DisplayStatus
+} until ($VMagentStuatus -eq "Ready")
 
 
 ##############################################################################
@@ -924,7 +1168,10 @@ Write-Host "Updating and restarting Rescue VM '$RescueVmName'..."
 $RescueVMObject| Update-AzVM | Out-Null # the update operation will restart VM
 
 #Wait until VM guest agent becomes ready
-do {Start-Sleep -Seconds 5$VMagentStuatus = (Get-AzVM -ResourceGroupName $RescueVmRg -Name $RescueVmName -Status).VMagent.Statuses.DisplayStatus} until ($VMagentStuatus -eq "Ready")
+do {
+Start-Sleep -Seconds 5
+$VMagentStuatus = (Get-AzVM -ResourceGroupName $RescueVmRg -Name $RescueVmName -Status -ErrorAction SilentlyContinue).VMagent.Statuses.DisplayStatus
+} until ($VMagentStuatus -eq "Ready")
 
 
 if ($WindowsOrLinux -eq "Windows")
@@ -987,25 +1234,131 @@ if($TestPath -eq $true)
 
 ('$DesktopUnlockScripttPath' + ' = New-Item "C:\Users\Public\Desktop\Unlock disk.ps1"') >> $PathScriptUnlockDisk
 
-('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '$DriveToUnlock' + '= (Get-BitLockerVolume | ?{$_.KeyProtector -ne $null}).mountpoint' + "'") >> $PathScriptUnlockDisk
 
-('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'" + '$BekVolumeDriveLetter' + ' = (Get-Volume -FileSystemLabel "Bek Volume").DriveLetter' + "'") >> $PathScriptUnlockDisk
+        #check if the BEK disk is offline and put it online
 
-('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'" + '$BekPath' + ' = ' + '$BekVolumeDriveLetter' + ' + ":\*"'  + "'") >> $PathScriptUnlockDisk
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '#check if the BEK disk is offline and put it online' + "'") >> $PathScriptUnlockDisk
 
-('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'" + '$BekKeyName' + ' = (Get-ChildItem -Path ' + '$BekPath' + ' -Force -Include *.bek).Name' + "'") >> $PathScriptUnlockDisk
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '$BEKVolumeNumber' + ' = (get-disk | ?{($_.operationalstatus -eq "Offline") -and ($_.IsSystem -eq ' + '$false' + ' ) -and ($_.size -like "503*") }).Number'  + "'") >> $PathScriptUnlockDisk
 
-('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'" + '$BekPath' + ' = ' + '$BekVolumeDriveLetter' + ' + ":\" + ' + '$BekKeyName' + "'") >> $PathScriptUnlockDisk
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'If (' + '$BEKVolumeNumber' + ' -ne ' + '$Null' + ')' + "'") >> $PathScriptUnlockDisk
 
-('Add-Content "'+ '$DesktopUnlockScripttPath' + '" ' + "'" + 'manage-bde -unlock ' + '$DriveToUnlock' + ' -recoveryKey ' + '"' + '$BekPath' + '"' + "'") >> $PathScriptUnlockDisk
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '{ ' + '$error' + '.clear()'  + "'") >> $PathScriptUnlockDisk
 
-#create bat stored in startup folder for all users, which will call the unlock script when user log on and reboot of VM
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ ' # try to bring the disk online. If Vm inside Hyper-V is running command will end with error and write-host to stop VM first ' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'try {' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'Set-Disk -number ' + '$BEKVolumeNumber' + ' -IsOffline ' + '$False' + ' -ErrorAction SilentlyContinue' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'Write-Host "Setting Bek Volume as online..."}' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'catch {}' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'if (' + '$error' + ')' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '{Write-host "Vm inside Hyper-V is running and it is using Bek Volume. Disk cannot be set as online. Stop Vm inside Hyper-V and run again the script" -ForegroundColor red' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'Write-Host "Script will exit in 30 seconds"' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'Start-Sleep 30' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'exit' + "'") >> $PathScriptUnlockDisk
+  
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '}' + "'") >> $PathScriptUnlockDisk
+      
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'if (!' + '$error' + ')' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '{Write-host "Bek Volume is online" -ForegroundColor green}' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '}' + "'") >> $PathScriptUnlockDisk
+        
+
+         #check if the encrypted disk is offline and put it online
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '#check if the encrypted disk is offline and put it online ' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '$NumberOfEncryptedDisk' + ' = (get-disk | ?{($_.number -gt "0") -and ($_.size -gt "128849018880")}).Number' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'If (' + '$NumberOfEncryptedDisk' + ' -ne ' + '$Null' + ')' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '{' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '$error' + '.clear()' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '# try to bring the disk online. If Vm inside Hyper-V is running command will end with error and write-host to stop VM first' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'try {Set-Disk -number ' + '$NumberOfEncryptedDisk' + ' -IsOffline ' + '$False' + ' -ErrorAction SilentlyContinue' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'Write-Host "Setting Encrypted disk as online..."' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '}' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'catch {}' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'if (' + '$error' + ')' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '{Write-host "Vm inside Hyper-V is running and it is using the Encrypted disk. Disk cannot be set as online. Stop Vm inside Hyper-V and run again the script" -ForegroundColor red' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'Write-Host "Script will exit in 30 seconds"' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'Start-Sleep 30' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'exit' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '}' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'if (!' + '$error' + ')' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '{Write-host "Encrypted disk is online" -ForegroundColor green}' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '}' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ 'Write-Host "Unlocking disk..."' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'"+ '$DriveToUnlock' + '= (Get-BitLockerVolume | ?{$_.KeyProtector -ne $null}).mountpoint' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'" + '$BekVolumeDriveLetter' + ' = (Get-Volume -FileSystemLabel "Bek Volume").DriveLetter' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'" + '$BekPath' + ' = ' + '$BekVolumeDriveLetter' + ' + ":\*"'  + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'" + '$BekKeyName' + ' = (Get-ChildItem -Path ' + '$BekPath' + ' -Force -Include *.bek).Name' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'" + '$BekPath' + ' = ' + '$BekVolumeDriveLetter' + ' + ":\" + ' + '$BekKeyName' + "'") >> $PathScriptUnlockDisk
+
+         ('Add-Content "' + '$DesktopUnlockScripttPath' + '" ' + "'" + 'manage-bde -unlock ' + '$DriveToUnlock' + ' -recoveryKey ' + '"' + '$BekPath' + '"' + "'") >> $PathScriptUnlockDisk
+
+
+#create unlock script from from startup 
+('$UnlockStartupScript' + ' = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\Unlock disk.ps1"') >> $PathScriptUnlockDisk
+
+('$UnlockStartupScriptpath' + ' = New-Item "C:\Unlock Disk\Unlock disk.ps1"') >> $PathScriptUnlockDisk
+
+
+        ('Add-Content "' + '$UnlockStartupScriptpath' + '" ' + "'"+ '$DriveToUnlock' + '= (Get-BitLockerVolume | ?{$_.KeyProtector -ne $null}).mountpoint' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$UnlockStartupScriptpath' + '" ' + "'" + '$BekVolumeDriveLetter' + ' = (Get-Volume -FileSystemLabel "Bek Volume").DriveLetter' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$UnlockStartupScriptpath' + '" ' + "'" + '$BekPath' + ' = ' + '$BekVolumeDriveLetter' + ' + ":\*"'  + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$UnlockStartupScriptpath' + '" ' + "'" + '$BekKeyName' + ' = (Get-ChildItem -Path ' + '$BekPath' + ' -Force -Include *.bek).Name' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "' + '$UnlockStartupScriptpath' + '" ' + "'" + '$BekPath' + ' = ' + '$BekVolumeDriveLetter' + ' + ":\" + ' + '$BekKeyName' + "'") >> $PathScriptUnlockDisk
+
+        ('Add-Content "'+ '$UnlockStartupScriptpath' + '" ' + "'" + 'manage-bde -unlock ' + '$DriveToUnlock' + ' -recoveryKey ' + '"' + '$BekPath' + '"' + "'") >> $PathScriptUnlockDisk
+
+
+#create bat stored in startup folder for all users, which will call the unlock script from startup folder when user log on and reboot of VM
+
 '#create .bat script stored in startup folder for all users, which will call the unlock script.ps1 when user log on and reboot of VM' >> $PathScriptUnlockDisk
 '' >> $PathScriptUnlockDisk
+
 ('$StartupFolderAllUsers' + ' = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"') >> $PathScriptUnlockDisk
+
 ('$StartupUnlockDiskBatScriptPath' + ' = New-Item ' + '"' + '$StartupFolderAllUsers' + '\unlock_disk.bat' + '"') >> $PathScriptUnlockDisk
-('Add-Content "'+ '$StartupUnlockDiskBatScriptPath' + '"' + " '" + 'msg * ' + '"' + 'Unlocking encrypted disk...If disk does not unlock automaticaly in 30 seconds, use the shortcut from desktop to unlock encrypted attached disk.' + '"' + "'") >> $PathScriptUnlockDisk
-('Add-Content "' + '$StartupUnlockDiskBatScriptPath' + '" ' + "'" + 'powershell.exe -windowstyle hidden -File "C:\Users\Public\Desktop\Unlock disk.ps1' + '"' + "'") >> $PathScriptUnlockDisk
+
+#('Add-Content "'+ '$StartupUnlockDiskBatScriptPath' + '"' + " '" + 'msg * ' + '"' + 'Unlocking encrypted disk...If disk does not unlock automaticaly in 30 seconds, use the shortcut from desktop to unlock encrypted attached disk.' + '"' + "'") >> $PathScriptUnlockDisk
+('Add-Content "' + '$StartupUnlockDiskBatScriptPath' + '" ' + "'" + 'powershell.exe -windowstyle hidden -File "C:\Unlock Disk\Unlock disk.ps1' + '"' + "'") >> $PathScriptUnlockDisk
 
 ('Stop-Transcript | Out-Null') >> $PathScriptUnlockDisk
 
@@ -1128,13 +1481,6 @@ If ($enablenested)
 
         ('Add-Content "' + '$StartupUnlockDiskBatScriptPath' + '" ' + "'" + 'start Virtmgmt.msc' + "'") >> $PathScriptEnableNested
 
-        # Modify the .bat script stored in startup folder for all users, which will call the unlock script when user log on and reboot of VM, and remove the notification, since the disk is put offline for Hyper-V VM
-        'Modify the .bat script stored in startup folder for all users, which will call the unlock script when user log on and reboot of VM, and remove the notification, since the disk is put offline for Hyper-V VM' >> $PathScriptEnableNested
-        '' >> $PathScriptEnableNested
-        ('$StartupUnlockDiskBatScriptPath' + ' = New-Item ' + '"' + '$StartupFolderAllUsers' + '\unlock_disk.bat' + '"' + ' -Force') >> $PathScriptEnableNested
-        
-        ('Add-Content "' + '$StartupUnlockDiskBatScriptPath' + '" ' + "'" + 'powershell.exe -windowstyle hidden -File "C:\Unlock Disk\unlock_disk.ps1' + '"' + "'") >> $PathScriptEnableNested
-
         ('Stop-Transcript | Out-Null') >> $PathScriptEnableNested
 
         # Invoke the command on the VM, using the local file
@@ -1142,8 +1488,38 @@ If ($enablenested)
 
         Write-Host ""
         Write-host "Hyper-V VM was successfully configured and created" -ForegroundColor green
-}
+    }
+#>
+Write-Host ""
+Write-host "Rescue VM was successfully configured and created" -ForegroundColor green
 
+Write-Host ""
+Write-host "You can RDP to the Rescue VM"
+
+#removing all necesary script from Azure Cloud Drive
+
+
+#Remove-Item $PathScriptUnlockDisk
+#Remove-Item $PathScriptInstallHyperVRole
+#Remove-Item $PathScriptEnableNested
+
+
+# Calculate elapsed time
+$EndTimeMinute = (Get-Date).Minute
+$EndTimeSecond = (Get-Date).Second
+$DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+$DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+$DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+$DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+Write-Host ""
+Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
+
+Write-Host ""
+Write-Host "Log file '$HOME/CreateRescueVMScript_Execution_log.txt' was successfully saved"
+Write-Host ""
+
+Stop-Transcript | Out-Null
+Write-Host ""
 }
 
 
@@ -1185,14 +1561,14 @@ if($TestPath -eq $true)
 
 # Invoke the command on the VM, using the local file
 Invoke-AzVMRunCommand -Name $RescueVmName -ResourceGroupName $RescueVmRg -CommandId 'RunShellScript' -ScriptPath $PathScriptUnlockDisk | Out-Null
-}
+
 
 #>
 Write-Host ""
 Write-host "Rescue VM was successfully configured and created" -ForegroundColor green
 
 Write-Host ""
-Write-host "You can RDP to the Rescue VM"
+Write-host "You can SSH to the Rescue VM"
 
 #removing all necesary script from Azure Cloud Drive
 
@@ -1203,14 +1579,19 @@ Write-host "You can RDP to the Rescue VM"
 
 
 # Calculate elapsed time
-[int]$endMin = (Get-Date).Minute
-$ElapsedTime =  $([int]$endMin - [int]$startMin)
+$EndTimeMinute = (Get-Date).Minute
+$EndTimeSecond = (Get-Date).Second
+$DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+$DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+$DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+$DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
 Write-Host ""
-Write-Host "Script execution time: $ElapsedTime minutes"
+Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
 
 Write-Host ""
-Write-Host "Log file '$HOME/Execution_log.txt' was successfully saved"
+Write-Host "Log file '$HOME/CreateRescueVMScript_Execution_log.txt' was successfully saved"
 Write-Host ""
 
 Stop-Transcript | Out-Null
 Write-Host ""
+}
