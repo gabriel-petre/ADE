@@ -1,4 +1,4 @@
-﻿ Param (
+ Param (
 
    [Parameter(Mandatory = $true)] [String] $VmName,
    [Parameter(Mandatory = $true)] [String] $VMRgName,
@@ -9,12 +9,12 @@
 ) 
 
 Write-Host ""
-Write-Warning "Please use a fresh opened page of Azure Cloud Shell before runnig the script, since Azure Cloud Shell has a timeout period of 20 minutes of inactivity."
-Write-Warning "If Azure Cloud Shell times out while running the script, the script will stop at the time of the timeout."
-Write-Warning "If the script is stopped until it finishes, it might break your VM"
+Write-Host "Please use a fresh opened page of Azure Cloud Shell before runnig the script, since Azure Cloud Shell has a timeout period of 20 minutes of inactivity." -ForegroundColor Yellow
+Write-Host "If Azure Cloud Shell times out while running the script, the script will stop at the time of the timeout." -ForegroundColor Yellow
+Write-Host "If the script is stopped until it finishes, it might break your VM" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "Starting to write in log file '$HOME/RestoreScript_Execution_log.txt' for troubleshooting purposes"
-Start-Transcript -Path "$HOME/RestoreScript_Execution_log.txt" -Append | Out-Null
+Write-Host "Starting to write in log file '$HOME/RecreateScript_Execution_log.txt' for troubleshooting purposes"
+Start-Transcript -Path "$HOME/RecreateScript_Execution_log.txt" -Append | Out-Null
 Write-Host ""
 
 ##################################################
@@ -41,20 +41,522 @@ Write-host "Subscription '$currentSubscription' was selected"
 
 
 # Start to measure execution time of script
-[int]$startMin = (Get-Date).Minute
+$StartTimeMinute = (Get-Date).Minute
+$StartTimeSecond = (Get-Date).Second
 
 #Write-Host "Disabling warning messages to users that the cmdlets used in this script may be changed in the future." -ForegroundColor Yellow
 Set-Item Env:\SuppressAzurePowerShellBreakingChangeWarnings "true"
 
-#######################################
-#             Get VM object           #
-#######################################
+Write-host ""
+$VmExistsOrDelete = Read-Host "Vm exists (E) or was deleted (D)?"
+
+if ($VmExistsOrDelete -ne "E") # Vm was deletd and will ask if user has exported vm configuration before VM was deleted or stop
+{
+Write-host ""
+$HavePreviousVMConfig = Read-Host "Do you have the previous VM configuration file before VM was deleted (Y) or no VM configuration file exists and script will stop? (S)" 
+if ($HavePreviousVMConfig -eq "S") # user does NOT have the previous VM configuration file before VM was deleted
+    {
+        Write-Host ""
+        Write-Host "Without a VM configuration file that was exported before VM was deleted script cannot continue. Script will stop!" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
+        Write-host 
+        Exit
+    }
+if ($HavePreviousVMConfig -ne "S") # Testing if the specified disk exists and if yes, user has the previous VM configuration file before VM was deleted and will be ask to select it from the list of existing configuration files
+    {
+    $error.clear()
+
+        #Test if specified disks exists
+        Try { $TestIfDiskExists = Get-AzDisk | ?{$_.Name -eq $OSDiskName} }
+
+        catch {}
+
+        if ($TestIfDiskExists -eq $null)
+        {
+        Write-Host ""
+        Write-Host "Disk '$OSDiskName' was not found in resource group '$VMRgName'" -ForegroundColor Red
+        Write-Host ""
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
+        Write-host 
+        Write-Host "Script will exit"
+        Exit
+        }
+
+        # Select an exiting configuration files
+        $TempName = "VM_" + "$VmName" + "_Settings"
+
+        Function Show-ExistingVMConfigurationJSONFiles 
+        {
+        $ErrorActionPreference = 'SilentlyContinue'
+        $Menu = 0
+        $ExistingVMConfigurationJSONFile = @(Get-ChildItem -path $HOME | ?{$_.Name -like "$TempName*"} | select Name)
+        Write-Host ""
+        Write-Host "Please select an existing VM Configuration JSON File you want to use:" -ForegroundColor Green;
+        % {Write-Host ""}
+        $ExistingVMConfigurationJSONFile | % {Write-Host "[$($Menu)]" -ForegroundColor Cyan -NoNewline ; Write-host ". $($_.Name)"; $Menu++; }
+        % {Write-Host ""}
+        % {Write-Host ""}
+        % {Write-Host "[Q]" -ForegroundColor Red -NoNewline ; Write-host ". To quit."}
+        % {Write-Host ""}
+        $selection = Read-Host "Please select the VM Configuration JSON File Number - Valid numbers are 0 - $($ExistingVMConfigurationJSONFile.count -1), Q to quit"
+
+        If ($selection -eq 'Q') 
+            { 
+            Clear-Host
+            Write-Host ""
+            Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+            Write-Host ""
+            Stop-Transcript | Out-Null
+            Write-host 
+            Exit
+            }
+        
+        If ($ExistingVMConfigurationJSONFile.item($selection) -ne $null)
+
+            { 
+            Return @{$ExistingVMConfigurationJSONFile = $ExistingVMConfigurationJSONFile[$selection].name;} 
+            }
+        }
+    
+
+        $ExistingVMConfigurationJSONFileSelection = Show-ExistingVMConfigurationJSONFiles
+        $NameOfExistingJson = $ExistingVMConfigurationJSONFileSelection.Values
+        
+        Write-Host ""
+        Write-Host "Selected VM Configuration JSON File is: $NameOfExistingJson" -ForegroundColor Green
+        $Path_JSON_Vm_Settings = "$HOME/" + "$NameOfExistingJson"
+        $json_fullpath = $Path_JSON_Vm_Settings 
+    }
+}
+
+if ($VmExistsOrDelete -eq "E") # Vm exists and main script will run
+
+{
+
+Write-host ""
+Write-host "VM '$VmName' will be deleted and reacreated in resource group '$VMRgName' from the specified disk with name '$OSDiskName' from resource group '$OSDiskRg' and at the end will be encrypted again with Dual Pass with same encryption settings" -ForegroundColor Green
+
+##############################################################################
+#          Testing if VM and specified disk exist and Get VM object          #
+##############################################################################
 
 #VM object
-$vm = Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -ErrorAction Stop
-##############################################################
+$error.clear()
+#Test if specified VM exists and also storing VM object in $vm variable
+Try {$vm = Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -ErrorAction SilentlyContinue}
+
+catch {}
+
+if ($error)
+{
+Write-Host ""
+Write-Host "VM '$VmName' was not found in resource group '$VMRgName'" -ForegroundColor Red
+Write-Host ""
+Write-Host ""
+Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+Write-Host ""
+Stop-Transcript | Out-Null
+Write-host 
+Write-Host "Script will exit"
+Exit
+}
+$error.clear()
+
+#Test if specified disks exists
+Try { $TestIfDiskExists = Get-AzDisk | ?{$_.Name -eq $OSDiskName} -ErrorAction SilentlyContinue }
+
+catch {}
+
+if ($TestIfDiskExists -eq $null)
+{
+Write-Host ""
+Write-Host "Disk '$OSDiskName' was not found in resource group '$VMRgName'" -ForegroundColor Red
+Write-Host ""
+Write-Host ""
+Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+Write-Host ""
+Stop-Transcript | Out-Null
+Write-host 
+Write-Host "Script will exit"
+Exit
+}
+
+#######################################################
+#            Exporting VM config to JSON              #
+#######################################################
+
+
+Write-Host ""
+Write-Host "Exporting configuration settings for this VM in a JSON file that will be used for the recreate process..."
+
+function ExportVMConfigurationMenu
+    {
+    param (
+        [string]$Title = 'Export VM Configuration Menu'
+    )
+
+    Write-Host "========================================================================================== $Title =========================================================================================="
+    Write-Host ""
+    Write-Host "1: Export a new VM configuration JSON file to HOME Directory" 
+    Write-Host ""
+    Write-Host "2: Select an existing Vm configuration JSON file from HOME Directory"
+    Write-Host ""
+    Write-Host "Q: Press 'Q' to quit."
+    Write-Host ""
+    Write-Host "==================================================================================================================================================================================================================="
+
+   }
+
+ do{
+     Write-Host ""
+     #call 'ExportVMConfigurationMenu' function
+     ExportVMConfigurationMenu
+     $selection = Read-Host "Please make a selection"
+     Write-Host ""
+     switch ($selection)
+     {
+           '1' {Write-host "You chose option #1. A new VM configuration JSON file will be exported to HOME Directory" -ForegroundColor green}
+           '2' {Write-host "You chose option #2. Select an existing Vm configuration JSON file from HOME Directory" -ForegroundColor green}
+     }
+
+   } until ($selection -eq '1' -or $selection -eq '2' -or $selection -eq 'q')
+
+   if ($selection -eq "1") # option #1. A new VM configuration JSON file will be exported to HOME Directory
+   {
+       # Name of the Vm configuration JSON file
+        $TimeNow = get-date -f "yyyy-MM-dd_HH:mm:ss"
+        $Path_JSON_Vm_Settings = "$HOME/VM_" + "$VmName" + "_Settings_" + "$i" + '_' + "$TimeNow" + ".json"
+        $json_fullpath = $Path_JSON_Vm_Settings 
+
+        #export Vm config to JSON
+        Get-AzVM -ResourceGroupName $VMRgName -Name $VmName | ConvertTo-Json -depth 100 | Out-file -FilePath $json_fullpath -ErrorAction Stop
+
+        Write-Host ""
+        Write-Host "VM configuration JSON file was exported '$json_fullpath'" -ForegroundColor Green
+   }
+
+      if ($selection -eq "2") # option #2. Select an existing Vm configuration JSON file from HOME Directory
+   {
+        $TempName = "VM_" + "$VmName" + "_Settings"
+
+        Function Show-ExistingVMConfigurationJSONFiles 
+        {
+        $ErrorActionPreference = 'SilentlyContinue'
+        $Menu = 0
+        $ExistingVMConfigurationJSONFile = @(Get-ChildItem -path $HOME | ?{$_.Name -like "$TempName*"} | select Name)
+        Write-Host ""
+        Write-Host "Please select an existing VM Configuration JSON File you want to use:" -ForegroundColor Green;
+        % {Write-Host ""}
+        $ExistingVMConfigurationJSONFile | % {Write-Host "[$($Menu)]" -ForegroundColor Cyan -NoNewline ; Write-host ". $($_.Name)"; $Menu++; }
+        % {Write-Host ""}
+        % {Write-Host ""}
+        % {Write-Host "[Q]" -ForegroundColor Red -NoNewline ; Write-host ". To quit."}
+        % {Write-Host ""}
+        $selection = Read-Host "Please select the VM Configuration JSON File Number - Valid numbers are 0 - $($ExistingVMConfigurationJSONFile.count -1), Q to quit"
+
+        If ($selection -eq 'Q') 
+            { 
+            Clear-Host
+            Write-Host ""
+            Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+            Write-Host ""
+            Stop-Transcript | Out-Null
+            Write-host 
+            Exit
+            }
+        
+        If ($ExistingVMConfigurationJSONFile.item($selection) -ne $null)
+
+            { 
+            Return @{$ExistingVMConfigurationJSONFile = $ExistingVMConfigurationJSONFile[$selection].name;} 
+            }
+        }
+    
+
+        $ExistingVMConfigurationJSONFileSelection = Show-ExistingVMConfigurationJSONFiles
+        $NameOfExistingJson = $ExistingVMConfigurationJSONFileSelection.Values
+        
+        Write-Host ""
+        Write-Host "Selected VM Configuration JSON File is: $NameOfExistingJson" -ForegroundColor Green
+        $Path_JSON_Vm_Settings = "$HOME/" + "$NameOfExistingJson"
+        $json_fullpath = $Path_JSON_Vm_Settings 
+     }
+
+    if ($selection -eq 'q')
+
+       {
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
+        Write-host 
+       Write-Host "Script will exit" -ForegroundColor Green
+       Write-Host ""
+       exit
+       }
+
+}
+##################################################################
+#   Import JSON file into $import variable  and get AAD App ID   #
+##################################################################
+
+$import = gc $json_fullpath -Raw | ConvertFrom-Json -ErrorAction Stop
+
+
+#Check if we can find AD App ID used in previous encryption process from existing JSON file
+$AADClientID = $import.Extensions.Settings.AADClientID
+
+if ($AADClientID -eq $null)
+    {$ErrorRetrievingAppID = $true}
+            
+if ($AADClientID -ne $null)
+   {$ErrorRetrievingAppID = $false}
+
+
+###################################################################################
+#       Check if VM is stopped. If not check the VM agent status and stop it      #
+###################################################################################
+
+if ($VmExistsOrDelete -eq "E")
+
+{
+#Check if VM is stopped. If not, stop it
+
+$provisioningState = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue).Statuses[1].Code
+
+if ($provisioningState -eq "PowerState/deallocated")
+{
+    Write-Host ""
+    Write-Host "Vm '$VmName' is already stopped" -ForegroundColor Green
+}
+
+
+if ($provisioningState -ne "PowerState/deallocated")
+{
+    #Check the VM Status  
+    $InitialVMagentStuatus = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue).VMagent.Statuses.DisplayStatus
+
+    if ($InitialVMagentStuatus -eq "Ready") # 'Ready' state
+    {
+        Write-Host ""
+        Write-Host "Vm Agent is in a '$InitialVMagentStuatus' state" -ForegroundColor Green
+    }
+
+    if ($InitialVMagentStuatus -ne "Ready")  # 'Not Ready' state
+    {
+        Write-Host ""
+        Write-Host "Vm Agent is in a 'Not running' state" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "   It is highly recommended that the VM agent is in a 'Ready State', but script will continue to recreate this VM from the specified disk." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "   For the encryption process (add ADE extension) to be successful (which happens after this Vm will be deleted and recreated) the VM agent needs to be in a 'Ready' state after Vm will be recreated" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "   If VM agent needs is NOT in a 'Ready' state after Vm will be recreated, script will stop and encryption process (add ADE extension) needs to be manually resumed or run again this script once VM is in a 'Ready' state" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "   Keep in mind that even though after VM will be recreated and the encyption process (add ADE extension) will not be started by the script, VM boot process might be successfully and you may troubleshoot the VM agent issue" -ForegroundColor Green
+    }
+
+    Write-Host ""
+    Write-Host "Vm '$VmName' is running" -ForegroundColor Yellow
+    Write-Host ""
+    $ConfirmationToStop = read-host "To continue Vm needs to be Stopped\Deallocated. Do you want to stop this VM or quit? (S\Q)"
+    if ($ConfirmationToStop -eq "Q")
+        { 
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
+        Write-host ""
+        Exit}
+    Elseif ($ConfirmationToStop -ne "Q")
+    {
+        Write-Host ""
+        Write-Host "Stopping VM '$vmName'...";
+        Stop-AzVM -Name $vmName -ResourceGroupName $VMRgName -Force | Out-Null
+        Write-Host ""
+        Write-Host "VM '$vmName' was stopped" -ForegroundColor green
+    }
+}
+
+}
+
+##################################################################
+#       Creating a copy of this disk for backup purposes         #
+##################################################################
+
+# creating variable for $NewDiskName and $snapshotName
+
+# Starting number for the copy
+$i = 1 
+
+# Name of the snapshop of the disk
+$snapshotName = ('snap_' + $i + '_' + $OSDiskName)
+$snapshotNameLength = $snapshotName.Length
+
+    If ($snapshotNameLength -gt "50")
+    {
+    $snapshotName = $snapshotName.Substring(0,$snapshotName.Length-20)
+    }
+
+$checkIFAnotherSnapIsPresent = Get-AzSnapshot | ?{$_.Name -eq $snapshotName}
+
+####
+if ($checkIFAnotherSnapIsPresent -eq $null) #if a snapshot with the same name does not exists, use values
+
+{
+# Name of the snapshop of the disk
+$snapshotName = ('snap_' + $i + '_' + $OSDiskName)
+$snapshotNameLength = $snapshotName.Length
+
+    If ($snapshotNameLength -gt "50")
+    {
+    $snapshotName = $snapshotName.Substring(0,$snapshotName.Length-20)
+    }
+
+    Write-Host ""
+    Write-Host "A snapshot of the disk with the name '$snapshotName' will be created" -ForegroundColor green
+}
+
+
+if ($checkIFAnotherSnapIsPresent -ne $null) #if a snapshot with the same name already exists, add an increment of $i to name of the snapshot
+
+{
+    do{
+    # check if a snapshot with the same name already exists
+    Write-Host ""
+    Write-Host "A snapshot with the same name '$snapshotName' already exists. Searching for an available name..." -ForegroundColor Yellow
+    $i++
+
+    #Create the names of the snapshot
+    $snapshotName = ('snap_' + $i + '_' + $OSDiskName)
+    
+    # reduce the name of the snapshot
+    $snapshotNameLength = $snapshotName.Length
+    If ($snapshotNameLength -gt "50")
+    {
+    $snapshotName = $snapshotName.Substring(0,$snapshotName.Length-20)
+    }
+
+    # check again if the snapshot exists with the same name
+    $checkIFAnotherSnapIsPresent = Get-AzSnapshot | ?{$_.Name -eq $snapshotName}
+    }until ($checkIFAnotherSnapIsPresent -eq $null)
+
+    Write-Host ""
+    Write-Host "A snapshot of the disk with the name '$snapshotName' will be created" -ForegroundColor green
+}
+
+#Create snapshot of the OS disk
+Write-Host ""
+write-host "Creating a copy of the disk '$OSDiskName' for backup purposes..."
+
+$DiskObject = Get-AzDisk | ?{$_.name -eq $OSDiskName}
+$DiskId = $DiskObject.id
+$DiskLocation = $DiskObject.location
+$DiskType = $DiskObject.Sku.Name
+$DiskZone = $DiskObject.Zones
+
+# Create snapshot of the specified disk
+$snapshotConfig =  New-AzSnapshotConfig -SourceUri $DiskId -Location $DiskLocation -CreateOption copy -SkuName Standard_LRS
+New-AzSnapshot -Snapshot $snapshotConfig -SnapshotName $snapshotName -ResourceGroupName $OSDiskRg | Out-Null
+
+#####
+
+# Name of the copy of the disk
+$NewDiskName = ('copy_' + $i + '_'+ $OSDiskName)
+$NewDiskNameLength = $NewDiskName.Length
+
+    If ($NewDiskNameLength -gt "50")
+    {
+    $NewDiskName = $NewDiskName.Substring(0,$NewDiskName.Length-10)
+    }
+
+# check IF Another Copy with the same name exits
+$checkIFAnotherCopyIsPresent = Get-AzDisk | ?{$_.Name -eq $NewDiskName} 
+
+
+if ($checkIFAnotherCopyIsPresent -eq $null) #if a disk with the same name does not exists, use values
+
+{
+
+# Name of the copy of the disk
+$NewDiskName = ('copy_' + $i + '_'+ $OSDiskName)
+$NewDiskNameLength = $NewDiskName.Length
+
+    If ($NewDiskNameLength -gt "50")
+    {
+    $NewDiskName = $NewDiskName.Substring(0,$NewDiskName.Length-10)
+    }
+
+    Write-Host ""
+    Write-Host "A copy of the disk with the name '$NewDiskName' will be created" -ForegroundColor yellow
+}
+
+if ($checkIFAnotherCopyIsPresent -ne $null) #if a disk with the same name already exists, add an increment of $i to name of thi disk
+
+{
+    do{
+    # check if a disk with the same name already exists
+    Write-Host ""
+    Write-Host "A disk with the same name '$NewDiskName' already exists. Searching for an available name..." -ForegroundColor Yellow
+    $i++
+
+    #Create the names of the disk
+    $NewDiskName = ('copy_' + $i + '_'+ $OSDiskName)
+
+    # reduce the name of the Disk
+    $NewDiskNameLength = $NewDiskName.Length
+    If ($NewDiskNameLength -gt "50")
+        {
+        $NewDiskName = $NewDiskName.Substring(0,$NewDiskName.Length-10)
+        }
+
+    # check again if the disks exists with the same name
+    $checkIFAnotherCopyIsPresent = Get-AzDisk | ?{$_.Name -eq $NewDiskName}
+    }until ($checkIFAnotherCopyIsPresent -eq $null)
+
+    Write-Host ""
+    Write-Host "A copy of the disk with the name '$NewDiskName' will be created" -ForegroundColor yellow
+}
+
+
+
+#Create a managed disk from snapshot
+$Snapshot = Get-AzSnapshot -SnapshotName $snapshotName -ResourceGroupName $OSDiskRg
+
+if ($DiskZone -ne $null)
+{
+    $NewOSDiskConfig = New-AzDiskConfig -AccountType $DiskType -Location $DiskLocation -Zone $DiskZone -CreateOption Copy -SourceResourceId $Snapshot.Id
+    #create disk
+    $newOSDisk=New-AzDisk -Disk $NewOSDiskConfig -ResourceGroupName $OSDiskRg -DiskName $NewDiskName | Out-Null
+    Write-Host ""
+    Write-Host "A copy of the disk was created in resource group '$OSDiskRg', in zone '$DiskZone' with name '$NewDiskName'" -ForegroundColor green
+}
+
+if ($DiskZone -eq $null)
+{
+    $NewOSDiskConfig = New-AzDiskConfig -AccountType $DiskType -Location $DiskLocation -CreateOption Copy -SourceResourceId $Snapshot.Id
+    #create disk
+    $newOSDisk=New-AzDisk -Disk $NewOSDiskConfig -ResourceGroupName $OSDiskRg -DiskName $NewDiskName | Out-Null
+    Write-Host ""
+    Write-Host "A copy of the disk was created in resource group '$OSDiskRg' with name '$NewDiskName'" -ForegroundColor green
+}
+
+#Deleting the snapshot
+Write-Host ""
+write-host "Deleting unnecessary snapshots created earlier..."
+Remove-AzSnapshot -ResourceGroupName $OSDiskRg -SnapshotName $snapshotName -Force | Out-Null
+
+
+##############################################################
 #            Check if disk is attached to a VM or not        #
-##############################################################
+##############################################################
+
 Write-Host ""
 Write-Host "Checking if the disk is attached to a VM"
 
@@ -105,9 +607,15 @@ function Show-DettachMenu
      }
 
    } until ($selection -eq '1' -or $selection -eq '2' -or $selection -eq 'q')
+
  if ($selection -eq 'q')
 
  {
+ Write-Host ""
+ Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+ Write-Host ""
+ Stop-Transcript | Out-Null
+ Write-host ""
  Write-Host "Script will exit" -ForegroundColor Green
  Write-Host ""
  exit
@@ -154,14 +662,15 @@ function Show-DettachMenu
 if ($DiskAttachedToVM -eq $null)
 {
 Write-Host ""
-Write-Host "Disk is not attached to a VM" -ForegroundColor Green}######################################################################################################################################################################################
-#            Exporting VM config to JSON and then import it into $import variable and export ADE extension config to a TXT file to get AADClientID   into a variable                 #
-######################################################################################################################################################################################$Path_JSON_Vm_Settings = "$HOME/VM_" + "$VmName" + "_Settings.json"
-$json_fullpath = $Path_JSON_Vm_Settings 
+Write-Host "Disk is not attached to a VM" -ForegroundColor Green
+}
 
-$TestPath = Test-Path -Path $Path_JSON_Vm_Settings -ErrorAction Stop
-if($TestPath -eq $true)
-{         Write-host ""        Write-host "Another VM configuration was exported in to a JSON file with the same name, under path $json_fullpath" -ForegroundColor Yellow        Write-host ""        $DeletePreviousJSONConfigFile = Read-Host "Do you want to overwrite file from path $json_fullpath (O) or use the existing one (E) ?"    if ($DeletePreviousJSONConfigFile -eq "O") # overwrite the file         {         Write-host ""         Write-host "VM JSON config file will be overwritten" -ForegroundColor green         Remove-Item -Path $Path_JSON_Vm_Settings         #export Vm config to JSON         Get-AzVM -ResourceGroupName $VMRgName -Name $VmName | ConvertTo-Json -depth 100 | Out-file -FilePath $json_fullpath -ErrorAction Stop         }    if ($DeletePreviousJSONConfigFile -ne "O") # use existing file        {        Write-host ""        Write-host "Existing JSON configuration file with be used from path $json_fullpath" -ForegroundColor Green        Write-host ""        }}if($TestPath -eq $False){    #export Vm config to JSON    Write-Host ""    Write-Host "Exporting configration settings of VM '$VmName' in to a JSON file under path:  $json_fullpath  "    Get-AzVM -ResourceGroupName $VMRgName -Name $VmName | ConvertTo-Json -depth 100 | Out-file -FilePath $json_fullpath -ErrorAction Stop    Write-Host ""} ############################################ Import JSON file into $import variable  ############################################$import = gc $json_fullpath -Raw | ConvertFrom-Json -ErrorAction Stop#Check if we can find AD App ID used in previous encryption process from existing JSON file$AADClientID = $import.Extensions.Settings.AADClientIDif ($AADClientID -eq $null)    {$ErrorRetrievingAppID = $true}            if ($AADClientID -ne $null)   {$ErrorRetrievingAppID = $false}###################################################################      Check if VM is encypted with Dual Pass or not \ BEK\KEK   ####################################################################################################################################################################################
+
+
+##################################################################
+#      Check if VM is encypted with Dual Pass or not BEK-KEK     #
+###################################################################################################################################################################################
+
 $Check_if_VM_Is_Encrypted_with_Dual_Pass = $import.StorageProfile.OsDisk.EncryptionSettings.Enabled
 $Check_if_VM_Is_Encrypted_with_Dual_Pass_BEK_KEK = $import.StorageProfile.OsDisk.EncryptionSettings.KeyEncryptionKey.keyUrl
 
@@ -169,21 +678,48 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -eq $null) # Check if VM is encypte
     {
     Write-Host "Vm is not encrypted with Dual Pass. Script will end" -ForegroundColor Yellow
     Write-Host ""
+    Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+    Write-Host ""
+    Stop-Transcript | Out-Null
+    Write-host ""
     Write-Host "Script will exit in 30 seconds"
     Start-Sleep -Seconds 30
     Exit
-    }if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $Check_if_VM_Is_Encrypted_with_Dual_Pass_BEK_KEK -eq $null) # Check if VM is encypted with Dual Pass with BEK. If yes, continue, if not, script will stop 
-    {    $EncryptedWithBEK = $true    Write-host "Checking if VM is encrypted..."    Write-Host ""    Write-Host "Vm is encrypted using BEK" -ForegroundColor Green    Write-Host ""    }if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $Check_if_VM_Is_Encrypted_with_Dual_Pass_BEK_KEK -ne $null) # Check if VM is encypted with Dual Pass with KEK. If yes, continue, if not, script will stop 
-    {    $EncryptedWithKEK = $true    Write-host "Checking if VM is encrypted..."    Write-Host ""    Write-Host "Vm is encrypted using KEK" -ForegroundColor Green    Write-Host ""    }################################################################################################        Get AzureDiskEncryption extension config from file and store them in variables       ####################################################################################################################################################################################
+    }
 
-$SecretUrl = $import.StorageProfile.OsDisk.EncryptionSettings.DiskEncryptionKey.SecretUrl 
-$DiskEncryptionKeyVaultID = $import.StorageProfile.OsDisk.EncryptionSettings.DiskEncryptionKey.SourceVault.Id
-$keyEncryptionKeyUrl = $import.StorageProfile.OsDisk.EncryptionSettings.KeyEncryptionKey.keyurl
-$KeyVaultIDforKey = $import.StorageProfile.OsDisk.EncryptionSettings.KeyEncryptionKey.SourceVault.id
+if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $Check_if_VM_Is_Encrypted_with_Dual_Pass_BEK_KEK -eq $null) # Check if VM is encypted with Dual Pass with BEK. If yes, continue, if not, script will stop 
+    {
+    $EncryptedWithBEK = $true
+    Write-host "Checking if VM is encrypted..."
+    Write-Host ""
+    Write-Host "Vm is encrypted using BEK" -ForegroundColor Green
+    Write-Host ""
+    }
+
+if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $Check_if_VM_Is_Encrypted_with_Dual_Pass_BEK_KEK -ne $null) # Check if VM is encypted with Dual Pass with KEK. If yes, continue, if not, script will stop 
+    {
+    $EncryptedWithKEK = $true
+    Write-host "Checking if VM is encrypted..."
+    Write-Host ""
+    Write-Host "Vm is encrypted using KEK" -ForegroundColor Green
+    Write-Host ""
+    }
+
+
+    
+###############################################################################################
+#        Get AzureDiskEncryption extension config from file and store them in variables       #
+###################################################################################################################################################################################
+
+
+$SecretUrl = ($import.StorageProfile.OsDisk.EncryptionSettings.DiskEncryptionKey.SecretUrl).ToLower()
+$DiskEncryptionKeyVaultID = ($import.StorageProfile.OsDisk.EncryptionSettings.DiskEncryptionKey.SourceVault.Id).ToLower()
+$keyEncryptionKeyUrl = ($import.StorageProfile.OsDisk.EncryptionSettings.KeyEncryptionKey.keyurl).ToLower()
+$KeyVaultIDforKey = ($import.StorageProfile.OsDisk.EncryptionSettings.KeyEncryptionKey.SourceVault.id).ToLower()
 
 $CharArray = $DiskEncryptionKeyVaultID.Split("/")
 $diskEncryptionKeyVaultUrlTemp = $CharArray[8]
-$diskEncryptionKeyVaultUrl = "https://" + "$diskEncryptionKeyVaultUrlTemp" + ".vault.azure.net/"
+$diskEncryptionKeyVaultUrl = ("https://" + "$diskEncryptionKeyVaultUrlTemp" + ".vault.azure.net/").ToLower()
 
  # GET name of Keyvault from JSON section StorageProfile.OsDisk.EncryptionSettings.DiskEncryptionKey.SourceVault.Id
  $Inputstring = $import.StorageProfile.OsDisk.EncryptionSettings.DiskEncryptionKey.SourceVault.Id
@@ -200,7 +736,13 @@ if ($EncryptedWithKEK -eq $true)
   #Get the name of the KEK from JSON section StorageProfile.OsDisk.EncryptionSettings.KeyEncryptionKey.keyUrl
  $Inputstring = $import.StorageProfile.OsDisk.EncryptionSettings.KeyEncryptionKey.keyUrl
  $CharArray =$InputString.Split("/")
- $keyEncryptionKeyName = $CharArray[4] }################################################################################################       Menu functions     ####################################################################################################################################################################################function Show-Menu
+ $keyEncryptionKeyName = $CharArray[4]
+ }
+
+###############################################################################################
+#       Menu functions     #
+###################################################################################################################################################################################
+function Show-Menu
 {
     param (
     [string]$Title = 'Azure AD application and Secrets Menu'
@@ -224,7 +766,9 @@ if ($EncryptedWithKEK -eq $true)
     Write-Host "Q: Press 'Q' to quit."
     Write-Host ""
     Write-Host "==================================================================================================================================================================================================================="
-}function Show-Menu2
+}
+
+function Show-Menu2
 {
     param (
         [string]$Title = 'For managing encryption keys in the key vault, select an option from below to get the details of an Azure AD application that will be used in authentication process in Azure AD'
@@ -248,7 +792,9 @@ if ($EncryptedWithKEK -eq $true)
     Write-Host "Q: Press 'Q' to quit."
     Write-Host ""
     Write-Host "==================================================================================================================================================================================================================="
-}function Show-Menu3
+}
+
+function Show-Menu3
 {
             param (
             [string]$Title = 'For managing encryption keys in the key vault, select an option from below to get the details of an Azure AD application that will be used in authentication process in Azure AD'
@@ -275,7 +821,12 @@ if ($EncryptedWithKEK -eq $true)
         Write-Host "Q: Press 'Q' to quit."
         Write-Host ""
         Write-Host "==================================================================================================================================================================================================================="
-  }function Show-PermissionsMenu{  param (
+  
+}
+
+function Show-PermissionsMenu
+{
+  param (
         [string]$Title = 'Permissions Menu'
     )
 
@@ -289,7 +840,13 @@ if ($EncryptedWithKEK -eq $true)
     Write-Host "3: Confirm that permissions are already set" 
     Write-Host ""
     Write-Host "Q: Press 'Q' to quit."
-    Write-Host ""    Write-Host "==================================================================================================================================================================================================================="}function Show-NewAadAppMenu{  param (
+    Write-Host ""
+    Write-Host "==================================================================================================================================================================================================================="
+}
+
+function Show-NewAadAppMenu
+{
+  param (
         [string]$Title = 'Create new AAD Application Menu'
     )
 
@@ -301,8 +858,18 @@ if ($EncryptedWithKEK -eq $true)
     Write-Host "2: Manually create a new Azure AD Application and Secret and give permissions for the APP on keys and secrets from Keyvault: '$keyVaultName' and run again the script"
     Write-Host ""
     Write-Host "Q: Press 'Q' to quit."
-    Write-Host ""    Write-Host "========================================================================================================================================================================================================================"}################################################################################################     Building  Menu      ####################################################################################################################################################################################if ($ErrorRetrievingAppID -eq $false) # App ID was retrived successfully from ADE extension, ask for AAD Client Secret. If cx do not have the secret, it will create a new secret
-{
+    Write-Host ""
+    Write-Host "========================================================================================================================================================================================================================"
+
+}
+
+###############################################################################################
+#     Building  Menu      #
+###################################################################################################################################################################################
+
+if ($ErrorRetrievingAppID -eq $false) # App ID was retrived successfully from ADE extension, ask for AAD Client Secret. If cx do not have the secret, it will create a new secret
+{
+
  do{
      
      #call 'Show-Menu' function
@@ -324,7 +891,11 @@ if ($EncryptedWithKEK -eq $true)
  if ($selection -eq 'q')
 
  {
- Write-Host ""
+Write-Host ""
+Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+Write-Host ""
+Stop-Transcript | Out-Null
+Write-host ""
  Write-Host "Script will exit" -ForegroundColor Green
  exit
  }
@@ -355,6 +926,10 @@ Write-Warning "No Azure disk encyption extension was found installed on VM '$VMN
   if ($selection -eq 'q')
 
  {
+Write-Host ""
+Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+Write-Host ""
+ Stop-Transcript | Out-Null
  Write-Host ""
  Write-Host "Script will exit" -ForegroundColor Green
  exit
@@ -385,6 +960,10 @@ if ($NoAppIDorSecretWereSpecified -eq $true)
   if ($selection -eq 'q')
 
  {
+Write-Host ""
+Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+Write-Host ""
+Stop-Transcript | Out-Null
  Write-Host ""
  Write-Host "Script will exit" -ForegroundColor Green
  exit
@@ -522,6 +1101,10 @@ do{
   if ($selection -eq 'q')
 
     {
+Write-Host ""
+Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+Write-Host ""
+Stop-Transcript | Out-Null
  Write-Host ""
  Write-Host "Script will exit" -ForegroundColor Green
  exit
@@ -566,7 +1149,9 @@ do{
          $error.clear()
 
          
-         try {$servicePrincipal = New-AzADServicePrincipal –ApplicationId $azureAdApplication.AppId -ErrorAction Stop}         catch {
+         try {$servicePrincipal = New-AzADServicePrincipal –ApplicationId $azureAdApplication.AppId -ErrorAction Stop}
+
+         catch {
 
                 Write-Host -Foreground Red -Background Black "An error occured! Most probably your user does not have proper permissions to create a new AzADServicePrincipal for AAD Application."
                 #Write-Host -Foreground Red -Background Black ($Error[0])
@@ -591,6 +1176,10 @@ do{
                     $ElapsedTime =  $([int]$endMin - [int]$startMin)
                     Write-Host ""
                     Write-Host "Script execution time: $ElapsedTime minutes"
+                    Write-Host ""
+                    Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+                    Write-Host ""
+                    Stop-Transcript | Out-Null
                     Write-host ""
                     Write-Host "Script will exit in 30 seconds"
                     Start-Sleep -Seconds 30
@@ -604,10 +1193,20 @@ do{
                     $ElapsedTime =  $([int]$endMin - [int]$startMin)
                     Write-Host ""
                     Write-Host "Script execution time: $ElapsedTime minutes"
-                    Write-host ""
+                    Write-Host ""
+                    Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+                    Write-Host ""
+                    Stop-Transcript | Out-Null
+                    # Calculate elapsed time
+                    $EndTimeMinute = (Get-Date).Minute
+                    $EndTimeSecond = (Get-Date).Second
+                    $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+                    $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+                    $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+                    $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+                    Write-Host ""
                     Write-Host "Script will exit in 30 seconds"
                     Start-Sleep -Seconds 30
-                    Stop-Transcript | Out-Null
                     Exit
                         }
          }
@@ -665,8 +1264,18 @@ do{
         Write-Host ""
         Write-Host "Script execution time: $ElapsedTime minutes"
 
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
         Stop-Transcript | Out-Null
-
+        # Calculate elapsed time
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+        Write-Host ""
         Write-Host "Script will exit in 30 seconds"
         Start-Sleep -Seconds 30
         Exit
@@ -704,7 +1313,19 @@ do{
  if ($selection -eq 'q')
 
  {
+Write-Host ""
+Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+Write-Host ""
+Stop-Transcript | Out-Null
  Write-Host ""
+# Calculate elapsed time
+$EndTimeMinute = (Get-Date).Minute
+$EndTimeSecond = (Get-Date).Second
+$DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+$DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+$DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+$DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+Write-Host ""
  Write-Host "Script will exit" -ForegroundColor Green
  exit
  }
@@ -761,8 +1382,18 @@ if ($error)
         Write-Host ""
         Write-Host "Script execution time: $ElapsedTime minutes"
 
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
         Stop-Transcript | Out-Null
-
+        # Calculate elapsed time
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+        Write-Host ""
         Write-Host "Script will exit in 30 seconds"
         Start-Sleep -Seconds 30
         Exit
@@ -783,17 +1414,18 @@ if ($AccessPoliciesOrRBAC -eq $true)
     Write-Host "Checking if AAD Application with ID: '$AADClientID' has at least 'Key Vault Administrator' role assigned"
    
         $error.clear()
-    try {$AppObjectID = (Get-AzureADApplication -Filter "AppId eq '$AADClientID'").DisplayName}
+    try {$AppDisplayName = (Get-AzureADApplication -Filter "AppId eq '$AADClientID'").DisplayName}
 
     catch {
     
           }
     if ($error)
     {
-    $GetAzureADApplicationObjectIdCommand =  '$AppObjectID' + " = (Get-AzureADApplication -Filter " + '"' + "AppId eq " + "'" + "$AADClientID" + "'" + '"' + ").DisplayName"
+    $GetAzureADApplicationObjectIdCommand =  '$AppDisplayName' + " = (Get-AzureADApplication -Filter " + '"' + "AppId eq " + "'" + "$AADClientID" + "'" + '"' + ").DisplayName"
     
     }
 
+    # Check if this AAD App has already permissions
 
     $CheckRoleForApp = Get-AzRoleAssignment -Scope $DiskEncryptionKeyVaultID | ?{$_.RoleDefinitionName -eq "Key Vault Administrator" -and $_.DisplayName -eq $AppDisplayName}
 
@@ -805,7 +1437,7 @@ if ($AccessPoliciesOrRBAC -eq $true)
      }
 
 
-    if ($CheckRoleForApp -eq $null)
+    if ($CheckRoleForApp -eq $null) # no permissions found
 {
     Write-Host ""
     Write-Host "AAD Application with ID: '$AADClientID' does not have 'Key Vault Administrator' role assigned"
@@ -845,8 +1477,18 @@ if ($error)
         Write-Host ""
         Write-Host "Script execution time: $ElapsedTime minutes"
 
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
         Stop-Transcript | Out-Null
-
+         # Calculate elapsed time
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+        Write-Host ""
         Write-Host "Script will exit in 30 seconds"
         Start-Sleep -Seconds 30
         Exit
@@ -865,8 +1507,18 @@ if ($error)
         Write-Host ""
         Write-Host "Script execution time: $ElapsedTime minutes"
 
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
         Stop-Transcript | Out-Null
-
+        # Calculate elapsed time
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+        Write-Host ""
         Write-Host "Script will exit in 30 seconds"
         Start-Sleep -Seconds 30
         Exit
@@ -874,7 +1526,9 @@ if ($error)
     if ($selection -eq "3")
     {Write-host ""}
 
-#########################################################################################          Check if encryption settings gathered can successfully encrypt VM           ####################################################################################################################################################################################
+########################################################################################
+#          Check if encryption settings gathered can successfully encrypt VM           #
+###################################################################################################################################################################################
 
 $error.clear()
 
@@ -906,7 +1560,19 @@ try{
  if ($ErrorOuput -eq "y")
         {
         $error
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
         Write-host ""
+        # Calculate elapsed time
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+        Write-Host ""
         Write-Host "Script will exit in 30 seconds"
         Start-Sleep -Seconds 30
         Exit
@@ -914,7 +1580,19 @@ try{
 
  if ($ErrorOuput -eq "n")
         {
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
         Write-host ""
+        # Calculate elapsed time
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+        Write-Host ""
         Write-Host "Script will exit in 30 seconds"
         Start-Sleep -Seconds 30
         Exit
@@ -951,7 +1629,19 @@ try{
  if ($ErrorOuput -eq "y")
         {
         $error
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
         Write-host ""
+        # Calculate elapsed time
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+        Write-Host ""
         Write-Host "Script will exit in 30 seconds"
         Start-Sleep -Seconds 30
         Exit
@@ -959,6 +1649,20 @@ try{
 
  if ($ErrorOuput -eq "n")
         {
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
+        Write-host ""
+        # Calculate elapsed time
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+        Write-Host ""
+        Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
         Write-host ""
         Write-Host "Script will exit in 30 seconds"
         Start-Sleep -Seconds 30
@@ -975,7 +1679,9 @@ try{
 
 
 
-#########################################################################################           Check if OS disk and NICs are set to be deleted when VM is deleted         ####################################################################################################################################################################################
+########################################################################################
+#           Check if OS disk and NICs are set to be deleted when VM is deleted         #
+###################################################################################################################################################################################
 
 #Check if OS disk is set to be deleted when VM is deleted
 $osDiskDeleteOption = $import.StorageProfile.OsDisk.DeleteOption 
@@ -1025,7 +1731,20 @@ Write-host ""
 Write-host "Follow below article to send a PATCH request to change the 'DeleteOption' of NIC from 'delete' to 'detach' and run again the script"
 Write-host ""
 Write-Host "Article:  https://docs.microsoft.com/en-us/azure/virtual-machines/delete?tabs=powershell2#update-the-delete-behavior-on-an-existing-vm"
+Write-Host ""
+Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+Write-Host ""
+Stop-Transcript | Out-Null
 Write-host ""
+# Calculate elapsed time
+$EndTimeMinute = (Get-Date).Minute
+$EndTimeSecond = (Get-Date).Second
+$DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+$DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+$DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+$DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+Write-Host ""
+Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
 Write-Host "Script will exit in 30 seconds"
 Start-Sleep -Seconds 30
 Exit
@@ -1033,8 +1752,12 @@ Exit
 }
 
 
-###############################################################################            Prepare variables and VMConfig  for VM Creation VM               ####################################################################################################################################################################################
-# Get variables vallues from JSON file #
+##############################################################################
+#            Prepare variables and VMConfig  for VM Creation VM               #
+###################################################################################################################################################################################
+
+# Get variables vallues from JSON file #
+
 #create variables for redeployment 
 $VMRgName = $import.ResourceGroupName; 
 $location = $import.Location; 
@@ -1046,8 +1769,16 @@ $PlanName = $import.Plan.Name;
 $PlanPublisher = $import.Plan.Publisher; 
 $PlanProduct = $import.Plan.Product; 
 
-#Check if VM is in availability set$AvailabilitySetId = $import.AvailabilitySetReference.id;
-#Check if VM is in availability zone$AvailabilityZone = $import.Zones#Check if VM is in Proximity placement group (PPG)$PPGid = $import.ProximityPlacementGroup.id#A VM can be in an Availability Set and PPG in the same time
+#Check if VM is in availability set
+$AvailabilitySetId = $import.AvailabilitySetReference.id;
+
+#Check if VM is in availability zone
+$AvailabilityZone = $import.Zones
+
+#Check if VM is in Proximity placement group (PPG)
+$PPGid = $import.ProximityPlacementGroup.id
+
+#A VM can be in an Availability Set and PPG in the same time
 if ($AvailabilitySetId -ne $null -and $PPGid -ne $null)
 {
 $AvailabilitySetName = $AvailabilitySetId.Split('/')[8]
@@ -1058,12 +1789,28 @@ $PPGName = $PPGid.Split('/')[8]
 $PPGRG = $PPGid.Split('/')[4]
 $PPGid = (Get-AzProximityPlacementGroup -Name "$PPGName" -ResourceGroupName "$PPGRG").id
 
-#create the vm config$vmConfig = New-AzVMConfig -VMName $VmName -VMSize $vmsize -AvailabilitySetId "$AvailabilitySetId" -ProximityPlacementGroupId "$PPGid"
-}if ($PPGid -eq $null -and $AvailabilitySetId -ne $null){$AvailabilitySetName = $AvailabilitySetId.Split('/')[8]
-$AvailabilitySetRG = $AvailabilitySetId.Split('/')[4]
-$AvailabilitySetId = (Get-AzAvailabilitySet -ResourceGroupName "$AvailabilitySetRG" -Name "$AvailabilitySetName").Id#create the vm config$vmConfig = New-AzVMConfig -VMName $VmName -VMSize $vmsize -AvailabilitySetId $AvailabilitySetId}if ($AvailabilityZone -ne $null){#create the vm config$vmConfig = New-AzVMConfig -VMName $VmName -VMSize $vmsize -Zone "$AvailabilityZone"}
+#create the vm config
+$vmConfig = New-AzVMConfig -VMName $VmName -VMSize $vmsize -AvailabilitySetId "$AvailabilitySetId" -ProximityPlacementGroupId "$PPGid"
+}
 
-if ($PPGid -ne $null -and $AvailabilitySetId -eq $null){
+if ($PPGid -eq $null -and $AvailabilitySetId -ne $null)
+{
+$AvailabilitySetName = $AvailabilitySetId.Split('/')[8]
+$AvailabilitySetRG = $AvailabilitySetId.Split('/')[4]
+$AvailabilitySetId = (Get-AzAvailabilitySet -ResourceGroupName "$AvailabilitySetRG" -Name "$AvailabilitySetName").Id
+
+#create the vm config
+$vmConfig = New-AzVMConfig -VMName $VmName -VMSize $vmsize -AvailabilitySetId $AvailabilitySetId
+}
+
+if ($AvailabilityZone -ne $null)
+{
+#create the vm config
+$vmConfig = New-AzVMConfig -VMName $VmName -VMSize $vmsize -Zone "$AvailabilityZone"
+}
+
+if ($PPGid -ne $null -and $AvailabilitySetId -eq $null)
+{
 $PPGName = $PPGid.Split('/')[8]
 $PPGRG = $PPGid.Split('/')[4]
 $PPGid = (Get-AzProximityPlacementGroup -Name "$PPGName" -ResourceGroupName "$PPGRG").id
@@ -1072,7 +1819,8 @@ $vmConfig = New-AzVMConfig -VMName $VmName -VMSize $vmsize -ProximityPlacementGr
 }
 
 
-if ($AvailabilitySetId -eq $null -and $AvailabilityZone -eq $null -and $PPGid -eq $null){
+if ($AvailabilitySetId -eq $null -and $AvailabilityZone -eq $null -and $PPGid -eq $null)
+{
 #create the vm config
 $vmConfig = New-AzVMConfig -VMName $VmName -VMSize $vmsize -ErrorAction Stop
 }
@@ -1097,8 +1845,9 @@ $vmConfig = Add-AzVMNetworkInterface -VM $vmConfig -Id $SecondaryNicsIds_iterato
 
 }
 
-#New OS Disk
-$OSDiskID = $import.StorageProfile.OsDisk.ManagedDisk.id
+#Get OS Disk ID
+$OSDiskID = (Get-AzDisk -DiskName $OSDiskName -ResourceGroupName $OSDiskRg).Id
+
 
 $vmConfig = Set-AzVMOSDisk -VM $vmConfig -ManagedDiskId $OSDiskID -Name $osDiskName -CreateOption attach -Windows -ErrorAction Stop
 
@@ -1132,7 +1881,8 @@ if ($WindowsOrLinux -eq "Windows")
 {
 # Adding data disks:    Note: If we attach data disks to Linux VM in the creation phase, OS will not mount properly data disks and will mess the entire process. Data disks on Linux Vms will be added after Linux VM was created
 
-$DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id $DataDisksLUN = 0
+$DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id 
+$DataDisksLUN = 0
 
     foreach ($DataDisksIDs_iterator in $DataDisksIDs)
     {
@@ -1142,51 +1892,344 @@ $DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id $DataDisksLUN =
 
 Write-host "The operating system is Windows"
 Write-host ""
+
 Set-AzVmOSDisk -VM $vmConfig -ManagedDiskId $OSDiskID -DiskEncryptionKeyUrl $SecretUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -windows -CreateOption Attach -ErrorAction Stop | Out-Null
-}if ($WindowsOrLinux -eq "Linux")
-{$DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id $DataDisksLUN = 0
+
+}
+
+
+if ($WindowsOrLinux -eq "Linux")
+{
+$DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id 
+$DataDisksLUN = 0
 
     foreach ($DataDisksIDs_iterator in $DataDisksIDs)
     {
     Add-AzVMDataDisk -VM $vmConfig -ManagedDiskId $DataDisksIDs_iterator -Lun $DataDisksLUN -CreateOption Attach  -ErrorAction Stop | Out-Null
     $DataDisksLUN++
-    }Write-host "The operating system is Linux"Write-host ""Set-AzVmOSDisk -VM $vmConfig -ManagedDiskId $OSDiskID -DiskEncryptionKeyUrl $SecretUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -Linux -CreateOption Attach -ErrorAction Stop | Out-Null
-}###############################################################             Detach data disks and  Delete VM               ####################################################################################################################################################################################
+    }
+
+Write-host "The operating system is Linux"
+Write-host ""
+Set-AzVmOSDisk -VM $vmConfig -ManagedDiskId $OSDiskID -DiskEncryptionKeyUrl $SecretUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -Linux -CreateOption Attach -ErrorAction Stop | Out-Null
+
+}
+
+
+
+##############################################################
+#             Detach data disks and  Delete VM               #
+###################################################################################################################################################################################
+
+if ($VmExistsOrDelete -eq "E")
+{
 
     $ConfirmationToDeleteVM = read-host "Do you want to proceed with the delete operation for VM '$VMName' (D) or quit (Q)? (D\Q)"
     Write-Host ""
     if ($ConfirmationToDeleteVM -eq "Q")
-        { Exit}
+        {
+        # Calculate elapsed time
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+        Write-Host ""
+        Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null 
+        Exit}
 
     if ($ConfirmationToDeleteVM -eq "D")
-    {            # First Dettach data disks from VM                   Write-Host "Dettaching data disks from VM ..."        Write-Host ""
+    {
+    
+        # First Dettach data disks from VM           
+        Write-Host "Dettaching data disks from VM ..."
+        Write-Host ""
 
-        $DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id        #storing again Vm into a variable since disks were detached in the meantime        $vm = Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -ErrorAction Stop
+        $DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id
+
+        #storing again Vm into a variable since disks were detached in the meantime
+        $vm = Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -ErrorAction Stop
 
         foreach($DataDisksIDs_iterator in $DataDisksIDs)
             {
              Remove-AzVMDataDisk -VM $vm -ErrorAction Stop | Out-Null
             }
 
-        $vm | Update-AzVM | Out-Null        # Delete VM        Write-Host "Deleting VM..." -ForegroundColor Yellow        Write-Host ""        Remove-AzVM -ResourceGroupName $VMRgName -Name $VmName -Force -ErrorAction Stop | Out-Null    }#########################################             Recreate VM              ####################################################################################################################################################################################if ($AvailabilitySetId -ne $null -and $PPGid -ne $null)
-{Write-Host "Recreating VM in Availability Set '$AvailabilitySetName' and in proximity Placement group (PPG) '$PPGName' and attaching data disks..." Write-Host }if ($PPGid -eq $null -and $AvailabilitySetId -ne $null){$AvailabilitySetName = $AvailabilitySetId.Split('/')[8]Write-Host "Recreating VM in Availability Set '$AvailabilitySetName'and attaching data disks..." Write-Host }if ($AvailabilityZone -ne $null){Write-Host "Recreating VM in Availability Zone '$AvailabilityZone' and attaching data disks..." Write-Host }
+        $vm | Update-AzVM | Out-Null
 
-if ($PPGid -ne $null -and $AvailabilitySetId -eq $null){
-Write-Host "Recreating VM in proximity Placement group (PPG) '$PPGName' and attaching data disks..." Write-Host 
+        # Delete VM
+        Write-Host "Deleting VM..." -ForegroundColor Yellow
+        Write-Host ""
+
+
+        Remove-AzVM -ResourceGroupName $VMRgName -Name $VmName -Force -ErrorAction Stop | Out-Null
+    }
 }
 
-if ($AvailabilitySetId -eq $null -and $AvailabilityZone -eq $null -and $PPGid -eq $null){
+########################################
+#             Recreate VM              #
+###################################################################################################################################################################################
+
+if ($AvailabilitySetId -ne $null -and $PPGid -ne $null)
+{
+Write-Host "Recreating VM in Availability Set '$AvailabilitySetName' and in proximity Placement group (PPG) '$PPGName' and attaching data disks..." 
+Write-Host 
+}
+
+if ($PPGid -eq $null -and $AvailabilitySetId -ne $null)
+{
+$AvailabilitySetName = $AvailabilitySetId.Split('/')[8]
+Write-Host "Recreating VM in Availability Set '$AvailabilitySetName'and attaching data disks..." 
+Write-Host 
+}
+
+if ($AvailabilityZone -ne $null)
+{
+Write-Host "Recreating VM in Availability Zone '$AvailabilityZone' and attaching data disks..." 
+Write-Host 
+}
+
+if ($PPGid -ne $null -and $AvailabilitySetId -eq $null)
+{
+Write-Host "Recreating VM in proximity Placement group (PPG) '$PPGName' and attaching data disks..." 
+Write-Host 
+}
+
+if ($AvailabilitySetId -eq $null -and $AvailabilityZone -eq $null -and $PPGid -eq $null)
+{
 Write-Host "Vm is not apart of an Availability Set, Availability Zone or proximity placement group (PPG)"
 Write-Host ""
-}# Creating VM if ($WindowsOrLinux -eq "Windows")
-{Write-Host "Recreating VM and attaching data disks..." Write-Host New-AzVm -ResourceGroupName $VMRgName -Location $location -VM $vmConfig | Out-Null#Wait until VM guest agent becomes readydo {Start-Sleep -Seconds 5$VMagentStuatus = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status).VMagent.Statuses.DisplayStatus} until ($VMagentStuatus -eq "Ready")} if ($WindowsOrLinux -eq "Linux")
-{Write-Host "Recreating VM..." Write-Host New-AzVm -ResourceGroupName $VMRgName -Location $location -VM $vmConfig | Out-Null#Wait until VM guest agent becomes readydo {Start-Sleep -Seconds 5$VMagentStuatus = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status).VMagent.Statuses.DisplayStatus} until ($VMagentStuatus -eq "Ready")}################################################# Encrypt VM with previous encryption settings ####################################################################################################################################################################################
-Write-Host "Encrypting again VM with previous\gathered encryption settings ..." Write-Host #>
-###########################################################################    For VMs Encrypted with Dual Pass (previous version) with BEK\KEK:   ####################################################################################################################################################################################
+}
+
+# Creating VM
+
+        Write-Host ""
+        Write-Host "==================================================================================================================================================================================================================="
+        Write-Host "Encrypting settings used during VM creation:" -ForegroundColor green
+        Write-Host ""
+        Write-Host "SecretURL: $SecretUrl"
+        Write-Host "DiskEncryptionKeyVaultUrl: $diskEncryptionKeyVaultUrl"
+        Write-Host "DiskEncryptionKeyVaultId: $DiskEncryptionKeyVaultID"
+        Write-Host "keyEncryptionKeyUrl: $keyEncryptionKeyUrl"
+        Write-Host "KeyEncryptionKeyVaultId(KeyEncryptionKeyUrl): $KeyVaultIDforKey"
+        Write-host "AADClientID is: '$AADClientID'"
+        Write-Host "AAD App Secret Value: $aadClientSecretSec"
+        Write-Host ""
+        Write-Host "==================================================================================================================================================================================================================="
+        Write-Host ""
+
+ if ($WindowsOrLinux -eq "Windows")
+{
+    Write-Host "Recreating VM and attaching data disks..." 
+    Write-Host
+
+
+   # Creating VM. If the create Vm operation (New-AzVm) is taking more than 2 min to return status if Vm was created or not (it can happen if OS does not boot and VM agent not reporting status), will continue
+    New-AzVm -ResourceGroupName $VMRgName -Location $location -VM $vmConfig -DisableBginfoExtension -AsJob | Out-Null
+
+
+    # waiting for the VM state to change to running
+    Write-Host "Waiting for VM status to change in 'running'..." # for testing purposes
+   do {
+       Start-Sleep -Seconds 3
+       $VMpowerState = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue). Statuses[1].DisplayStatus
+
+        }until ($VMpowerState -eq "VM running")
+    
+    Write-Host ""
+    Write-Host "VM was created and is running" -ForegroundColor Green
+    Write-Host ""
+
+        # waiting for the VM agent to become ready since encyrption will not be able to start without the VM agen tin a ready state
+        $MinutesToWait = "5"
+        $TimeStart = Get-Date
+        $TimeEnd = $TimeStart.addminutes($MinutesToWait)
+        Write-Host "Waiting for the VM agent to become ready or the script will stop after $MinutesToWait minutes since encyrption will not be able to start without the VM agent in a ready state..."
+        Write-Host ""
+
+    Do { 
+        $TimeNow = Get-Date
+        $VMagentStuatus = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue).VMagent.Statuses.DisplayStatus
+        Start-Sleep -Seconds 5
+        }
+        Until ($TimeNow -ge $TimeEnd -or $VMagentStuatus -eq "Ready")
+
+
+
+    if ($VMagentStuatus -ne "Ready")
+    {
+    Write-host "Script will stop now since VM agent is in a '$VMagentStuatus' state and encyrption will not be able to start without the VM agent in a 'Ready' state" -ForegroundColor Yellow
+    Write-host ""
+    Write-host "Check if the operating system booted successfully and resolve this issue if it didn't, or start troubleshooting why the Vm Agent is in a '$VMagentStuatus' state" -ForegroundColor Yellow
+    Write-host ""
+    Write-host "Once the issues listed above were resolved, either run again this script or manually encrypt this VM" -ForegroundColor Yellow
+    Write-host ""
+
+    #delete backup disk or keep it
+    Write-Host "If not needed, please do not forget to manually delete the copy of the disk that was created in resource group '$OSDiskRg' with name '$NewDiskName'" -ForegroundColor Yellow
+    Write-Host ""
+    $DeleteCopyOfDisk = Read-Host "Do you want to delete it now? (Y\N)"
+
+    if ($DeleteCopyOfDisk -eq "Y")
+    {
+        Write-Host ""
+        Write-Host "Deleting disk..."
+        Remove-AzDisk -ResourceGroupName $OSDiskRg -DiskName $NewDiskName -Force | Out-Null
+        Write-Host ""
+        Write-Host "Backup Disk was deleted" -ForegroundColor green
+    }
+        Write-host ""
+        # Calculate elapsed time
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+        Write-Host ""
+        Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
+        Write-Host ""
+        Write-host "Script will exit in 10 seconds..."
+        Start-Sleep 10
+        Exit
+
+    }
+
+}
+
+ if ($WindowsOrLinux -eq "Linux")
+{
+    Write-Host "Recreating VM and attaching data disks..." 
+    Write-Host
+
+
+   # Creating VM. If the create Vm operation (New-AzVm) is taking more than 2 min to return status if Vm was created or not (it can happen if OS does not boot and VM agent not reporting status), will continue
+    New-AzVm -ResourceGroupName $VMRgName -Location $location -VM $vmConfig -AsJob | Out-Null
+
+
+    # waiting for the VM state to change to running
+    Write-Host "Waiting for VM status to change in 'running'..." # for testing purposes
+   do {
+       Start-Sleep -Seconds 3
+       $VMpowerState = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue). Statuses[1].DisplayStatus
+
+        }until ($VMpowerState -eq "VM running")
+    
+    Write-Host ""
+    Write-Host "VM was created and is running" -ForegroundColor Green
+    Write-Host ""
+
+        # waiting for the VM agent to become ready since encyrption will not be able to start without the VM agent in a ready state
+        $MinutesToWait = "5"
+        $TimeStart = Get-Date
+        $TimeEnd = $TimeStart.addminutes($MinutesToWait)
+        Write-Host "Waiting for the VM agent to become ready or the script will stop after $MinutesToWait minutes since encyrption will not be able to start without the VM agent in a ready state..."
+        Write-Host ""
+
+    Do { 
+        $TimeNow = Get-Date
+        $VMagentStuatus = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue).VMagent.Statuses.DisplayStatus
+        Start-Sleep -Seconds 5
+        }
+        Until ($TimeNow -ge $TimeEnd -or $VMagentStuatus -eq "Ready")
+
+
+
+    if ($VMagentStuatus -ne "Ready")
+    {
+    Write-host "Script will stop now since VM agent is in a '$VMagentStuatus' state and encyrption will not be able to start without the VM agent in a 'Ready' state" -ForegroundColor Yellow
+    Write-host ""
+    Write-host "Check if the operating system booted successfully and resolve this issue if it didn't, or start troubleshooting why the Vm Agent is in a '$VMagentStuatus' state" -ForegroundColor Yellow
+    Write-host ""
+    Write-host "Once the issues listed above were resolved, either run again this script or manually encrypt this VM" -ForegroundColor Yellow
+    Write-host ""
+
+    #delete backup disk or keep it
+    Write-Host "If not needed, please do not forget to manually delete the copy of the disk that was created in resource group '$OSDiskRg' with name '$NewDiskName'" -ForegroundColor Yellow
+    Write-Host ""
+    $DeleteCopyOfDisk = Read-Host "Do you want to delete it now? (Y\N)"
+
+    if ($DeleteCopyOfDisk -eq "Y")
+    {
+        Write-Host ""
+        Write-Host "Deleting disk..."
+        Remove-AzDisk -ResourceGroupName $OSDiskRg -DiskName $NewDiskName -Force | Out-Null
+        Write-Host ""
+        Write-Host "Backup Disk was deleted" -ForegroundColor green
+        Write-host ""
+        # Calculate elapsed time
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+        Write-Host ""
+        Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
+        Write-Host ""
+        Write-host "Script will exit in 10 seconds..."
+        Start-Sleep 10
+        Exit
+
+    }
+
+        if ($DeleteCopyOfDisk -ne "Y")
+    {
+        Write-host ""
+        # Calculate elapsed time
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
+        Write-Host ""
+        Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
+        Write-Host ""
+        Write-host "Script will exit in 10 seconds..."
+        Start-Sleep 10
+        Exit
+
+    }
+
+
+  }
+}
+
+
+################################################
+# Encrypt VM with previous encryption settings #
+###################################################################################################################################################################################
+
+Write-Host "Encrypting again VM with previous\gathered encryption settings ..." 
+Write-Host 
+
+#>
+##########################################################################
+#    For VMs Encrypted with Dual Pass (previous version) with BEK\KEK:   #
+###################################################################################################################################################################################
 
 
 if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithBEK-eq $true) # Check if VM is encypted with Dual Pass with BEK. If yes, continue, if not, script will stop 
-    {        Write-Host "VM was Encrypted with Dual Pass (previous version) with BEK"
+    {
+        Write-Host "VM was Encrypted with Dual Pass (previous version) with BEK"
         Write-Host ""
 
         #Encrypt the disks of an existing IaaS VM
@@ -1196,6 +2239,7 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithBEK-eq
         Write-Host ""
         Write-Host "Values used for encrypting again VM '$VmName':" -ForegroundColor green
         Write-Host ""
+        Write-Host "SecretURL: $SecretUrl"
         Write-Host "DiskEncryptionKeyVaultUrl: $diskEncryptionKeyVaultUrl"
         Write-Host "DiskEncryptionKeyVaultId: $DiskEncryptionKeyVaultID"
         Write-host "AADClientID is: '$AADClientID'"
@@ -1207,24 +2251,59 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithBEK-eq
          if ($WindowsOrLinux -eq "Windows")
         {
         Write-Host ""
-        Write-Host "Windows VM will be Encrypted with Dual Pass (previous version) with BEK"
+        Write-Host "Windows VM will be Encrypted with Dual Pass (previous version) with BEK..."
         Write-Host ""
-        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try RDP to this VM after 5 minutes in case encryption process becames a long running oepration for some reason, but VM might still be successfully encrypted" -ForegroundColor Yellow
- 
+        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try RDP to this VM after 5 minutes in case encryption process becames a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
+        
+        $error.clear()
+        try {
         $sequenceVersion = [Guid]::NewGuid();
         Set-AzVMDiskEncryptionExtension -ResourceGroupName $VMRgName -VMName $VmName -AadClientID $aadClientID -AadClientSecret $aadClientSecretSec -DiskEncryptionKeyVaultUrl $diskEncryptionKeyVaultUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -VolumeType "$EncryptionVolumeType" –SequenceVersion $sequenceVersion -Force | Out-Null
+        }
+
+        catch {}
+
+        if ($error) 
+            {
+            Write-Host ""
+            Write-Host "The installation process for ADE extension failed. Vm should have booted correctly. Try to encrypt this VM manually" -ForegroundColor Yellow
+            }
+
         Write-host ""
-        Write-host "Vm was encrypted successfully and is up and running!" -ForegroundColor green        }        if ($WindowsOrLinux -eq "Linux")
+        Write-host "Vm was encrypted successfully and is up and running!" -ForegroundColor green
+        }
+
+
+
+        if ($WindowsOrLinux -eq "Linux")
         {
         Write-Host ""
-        Write-Host "Linux VM will be Encrypted with Dual Pass (previous version) with BEK"
+        Write-Host "Linux VM will be Encrypted with Dual Pass (previous version) with BEK..."
         Write-Host ""
-        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try SSH to this VM after 5 minutes in case encryption process becames a long running oepration for some reason, but VM might still be successfully encrypted" -ForegroundColor Yellow
-                $sequenceVersion = [Guid]::NewGuid();
+        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try SSH to this VM after 5 minutes in case encryption process becames a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
+        
+        $error.clear()
+        Try {
+        $sequenceVersion = [Guid]::NewGuid();
         Set-AzVMDiskEncryptionExtension -ResourceGroupName $VMRgName -VMName $VmName -AadClientID $aadClientID -AadClientSecret $aadClientSecretSec -DiskEncryptionKeyVaultUrl $diskEncryptionKeyVaultUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -VolumeType "$EncryptionVolumeType" –SequenceVersion $sequenceVersion -skipVmBackup -Force | Out-Null
+        }
+
+        catch {}
+
+        if ($error) 
+            {
+            Write-Host ""
+            Write-Host "The installation process for ADE extension failed. Vm should have booted correctly. Try to encrypt this VM manually" -ForegroundColor Yellow
+            }
+
         Write-host ""
-        Write-host "Vm was encrypted successfully and is up and running!" -ForegroundColor green        }    }if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithKEK-eq $true) # Check if VM is encypted with Dual Pass with KEK. If yes, continue, if not, script will stop 
-    {
+        Write-host "Vm was encrypted successfully and is up and running!" -ForegroundColor green
+        }
+    }
+
+if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithKEK-eq $true) # Check if VM is encypted with Dual Pass with KEK. If yes, continue, if not, script will stop 
+    {
+
         #Encrypt the disks of an existing IaaS VM
        
         $EncryptionVolumeType = Read-Host -Prompt "Enter the encryption volume type ( OS Disk (OS) \ Data Disks (Data) \ All Disks (all) )"
@@ -1233,6 +2312,7 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithBEK-eq
         Write-Host "==================================================================================================================================================================================================================="
         Write-Host "Values used for encrypting again VM '$VmName':" -ForegroundColor green
         Write-Host ""
+        Write-Host "SecretURL: $SecretUrl"
         Write-Host "DiskEncryptionKeyVaultUrl: $diskEncryptionKeyVaultUrl"
         Write-Host "DiskEncryptionKeyVaultId: $DiskEncryptionKeyVaultID"
         Write-Host "keyEncryptionKeyUrl: $keyEncryptionKeyUrl"
@@ -1250,23 +2330,81 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithBEK-eq
         if ($WindowsOrLinux -eq "Windows")
         {
         Write-Host ""
-        Write-Host "Windows VM will be Encrypted with Dual Pass (previous version) with KEK"
+        Write-Host "Windows VM will be Encrypted with Dual Pass (previous version) with KEK..."
         Write-Host ""
-        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try RDP to this VM after 5 minutes in case encryption process becames a long running oepration for some reason, but VM might still be successfully encrypted" -ForegroundColor Yellow
- 
+        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try RDP to this VM after 5 minutes in case encryption process becames a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
+        
+        $error.clear()
+        try {
         $sequenceVersion = [Guid]::NewGuid();
         Set-AzVMDiskEncryptionExtension -ResourceGroupName $VMRgName -VMName $VmName -AadClientID $aadClientID -AadClientSecret $aadClientSecretSec -DiskEncryptionKeyVaultUrl $diskEncryptionKeyVaultUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -VolumeType "$EncryptionVolumeType" –SequenceVersion $sequenceVersion -Force | Out-Null
-        Write-host ""
-        Write-host "Vm was encrypted successfully and is up and running!" -ForegroundColor green        }         if ($WindowsOrLinux -eq "Linux")
-        {        Write-Host ""
-        Write-Host "Linux VM will be Encrypted with Dual Pass (previous version) with KEK"
-        Write-Host ""
-        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try SSH to this VM after 5 minutes in case encryption process becames a long running oepration for some reason, but VM might still be successfully encrypted" -ForegroundColor Yellow
-                $sequenceVersion = [Guid]::NewGuid();        Set-AzVMDiskEncryptionExtension -ResourceGroupName $VMRgName -VMName $VmName -AadClientID $aadClientID -AadClientSecret $aadClientSecretSec -DiskEncryptionKeyVaultUrl $diskEncryptionKeyVaultUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -VolumeType "$EncryptionVolumeType" –SequenceVersion $sequenceVersion -skipVmBackup -Force | Out-Null
-        Write-host ""
-        Write-host "Vm was encrypted successfully and is up and running!" -ForegroundColor green        }    }
+        }
 
-#################################################################################################################################   Output previous Cache settings for data disks since durring Vm creation, cache setting for all data disks was set to none  ####################################################################################################################################################################################
+        catch {}
+
+        if ($error) 
+            {
+            Write-Host ""
+            Write-Host "The installation process for ADE extension failed. Vm should have booted correctly. Try to encrypt this VM manually" -ForegroundColor Yellow
+            }
+
+        Write-host ""
+        Write-host "Vm was encrypted successfully and is up and running!" -ForegroundColor green
+        }
+
+
+
+         if ($WindowsOrLinux -eq "Linux")
+        {
+        Write-Host ""
+        Write-Host "Linux VM will be Encrypted with Dual Pass (previous version) with KEK..."
+        Write-Host ""
+        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try SSH to this VM after 5 minutes in case encryption process becames a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
+        
+        $error.clear()
+        try{
+        $sequenceVersion = [Guid]::NewGuid();
+        Set-AzVMDiskEncryptionExtension -ResourceGroupName $VMRgName -VMName $VmName -AadClientID $aadClientID -AadClientSecret $aadClientSecretSec -DiskEncryptionKeyVaultUrl $diskEncryptionKeyVaultUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -VolumeType "$EncryptionVolumeType" –SequenceVersion $sequenceVersion -skipVmBackup -Force | Out-Null
+        }
+
+        catch {}
+
+        if ($error) 
+            {
+            Write-Host ""
+            Write-Host "The installation process for ADE extension failed. Vm should have booted correctly. Try to encrypt this VM manually" -ForegroundColor Yellow
+            }
+
+        Write-host ""
+        Write-host "Vm was encrypted successfully and is up and running!" -ForegroundColor green
+
+        }
+    }
+
+
+########################################################################
+#   Delete the backup disk that was created before running the script  #
+########################################################################
+
+    
+Write-Host ""
+Write-Host "Once you confirm everything worked as it is expected, please do not forget to manually delete the copy of the disk that was created in resource group '$OSDiskRg' with name '$NewDiskName'" -ForegroundColor Yellow
+
+Write-Host ""
+$DeleteCopyOfDisk = Read-Host "Do you want to delete it now? (Y\N)"
+
+if ($DeleteCopyOfDisk -eq "Y")
+{
+Write-Host ""
+Write-Host "Deleting disk..."
+Remove-AzDisk -ResourceGroupName $OSDiskRg -DiskName $NewDiskName -Force | Out-Null
+Write-Host ""
+Write-Host "Backup Disk was deleted" -ForegroundColor green
+}
+
+################################################################################################################################
+#   Output previous Cache settings for data disks since durring Vm creation, cache setting for all data disks was set to none  #
+###################################################################################################################################################################################
 
 Write-host ""
 Write-host "Host cache was set to none for all data disks" -ForegroundColor Yellow
@@ -1279,12 +2417,20 @@ Write-host ""
         Write-host "Caching options: None = 0, Read = 1, Read\Write = 2. Check the 'caching' property in the Data disk(s) settings stored and listed below:" -ForegroundColor Yellow
         Write-Host ""
         $import.StorageProfile.DataDisks
-        Write-Host ""
+
         # Calculate elapsed time
-        [int]$endMin = (Get-Date).Minute
-        $ElapsedTime =  $([int]$endMin - [int]$startMin)
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
         Write-Host ""
-        Write-Host "Script execution time: $ElapsedTime minutes"
+        Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
         Write-Host ""
         Write-Host "Script will exit in 30 seconds"
         Start-Sleep -Seconds 30
@@ -1293,12 +2439,20 @@ Write-host ""
 
  if ($DataDisksPreviousCacheSettingsOuput -eq "n")
         {
-        Write-host ""
+
         # Calculate elapsed time
-        [int]$endMin = (Get-Date).Minute
-        $ElapsedTime =  $([int]$endMin - [int]$startMin)
+        $EndTimeMinute = (Get-Date).Minute
+        $EndTimeSecond = (Get-Date).Second
+        $DiffMinutes = ($EndTimeMinute - $StartTimeMinute).ToString()
+        $DiffSeconds = ($EndTimeSecond - $StartTimeSecond).ToString()
+        $DiffMinutesEdit = $DiffMinutes -replace "-" -replace ""
+        $DiffSecondsEdit = $DiffSeconds -replace "-" -replace ""
         Write-Host ""
-        Write-Host "Script execution time: $ElapsedTime minutes"
+        Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
         Write-Host ""
         Write-Host "Script will exit in 30 seconds"
         Start-Sleep -Seconds 30
