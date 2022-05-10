@@ -9,7 +9,7 @@
 ) 
 
 Write-Host ""
-Write-Host "Please use a fresh opened page of Azure Cloud Shell before runnig the script, since Azure Cloud Shell has a timeout period of 20 minutes of inactivity." -ForegroundColor Yellow
+Write-Host "Please use a fresh opened page of Azure Cloud Shell before running the script, since Azure Cloud Shell has a timeout period of 20 minutes of inactivity." -ForegroundColor Yellow
 Write-Host "If Azure Cloud Shell times out while running the script, the script will stop at the time of the timeout." -ForegroundColor Yellow
 Write-Host "If the script is stopped until it finishes, it might break your VM" -ForegroundColor Yellow
 Write-Host ""
@@ -31,9 +31,6 @@ Connect-AzAccount -UseDeviceAuthentication -ErrorAction Stop | Out-Null
 
 #Get current logged in user and active directory tenant details:
 Set-AzContext -Subscription $SubscriptionID | Out-Null
-$ctx = Get-AzContext;
-$adTenant = $ctx.Tenant.Id;
-$currentUser = $ctx.Account.Id
 
 $currentSubscription = (Get-AzContext).Subscription.Name
 Write-host ""
@@ -50,7 +47,7 @@ Set-Item Env:\SuppressAzurePowerShellBreakingChangeWarnings "true"
 Write-host ""
 $VmExistsOrDelete = Read-Host "Vm exists (E) or was deleted (D)?"
 
-if ($VmExistsOrDelete -ne "E") # Vm was deletd and will ask if user has exported vm configuration before VM was deleted or stop
+if ($VmExistsOrDelete -ne "E") # Vm was deleted and will ask if user has exported vm configuration before VM was deleted or stop
 {
 Write-host ""
 $HavePreviousVMConfig = Read-Host "Do you have the previous VM configuration file before VM was deleted (Y) or no VM configuration file exists and script will stop? (S)" 
@@ -140,7 +137,7 @@ if ($VmExistsOrDelete -eq "E") # Vm exists and main script will run
 {
 
 Write-host ""
-Write-host "VM '$VmName' will be deleted and reacreated in resource group '$VMRgName' from the specified disk with name '$OSDiskName' from resource group '$OSDiskRg' and at the end will be encrypted again with Dual Pass with same encryption settings" -ForegroundColor Green
+Write-host "VM '$VmName' will be deleted and recreated in resource group '$VMRgName' from the specified disk with name '$OSDiskName' from resource group '$OSDiskRg' and at the end will be encrypted again with Dual Pass with same encryption settings" -ForegroundColor Green
 
 ##############################################################################
 #          Testing if VM and specified disk exist and Get VM object          #
@@ -306,7 +303,7 @@ function ExportVMConfigurationMenu
 #   Import JSON file into $import variable  and get AAD App ID   #
 ##################################################################
 
-$import = gc $json_fullpath -Raw | ConvertFrom-Json -ErrorAction Stop
+$import = Get-Content $json_fullpath -Raw | ConvertFrom-Json -ErrorAction Stop
 
 
 #Check if we can find AD App ID used in previous encryption process from existing JSON file
@@ -340,15 +337,15 @@ if ($provisioningState -eq "PowerState/deallocated")
 if ($provisioningState -ne "PowerState/deallocated")
 {
     #Check the VM Status  
-    $InitialVMagentStuatus = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue).VMagent.Statuses.DisplayStatus
+    $InitialVMagentStatus = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue).VMagent.Statuses.DisplayStatus
 
-    if ($InitialVMagentStuatus -eq "Ready") # 'Ready' state
+    if ($InitialVMagentStatus -eq "Ready") # 'Ready' state
     {
         Write-Host ""
-        Write-Host "Vm Agent is in a '$InitialVMagentStuatus' state" -ForegroundColor Green
+        Write-Host "Vm Agent is in a '$InitialVMagentStatus' state" -ForegroundColor Green
     }
 
-    if ($InitialVMagentStuatus -ne "Ready")  # 'Not Ready' state
+    if ($InitialVMagentStatus -ne "Ready")  # 'Not Ready' state
     {
         Write-Host ""
         Write-Host "Vm Agent is in a 'Not running' state" -ForegroundColor Yellow
@@ -359,7 +356,7 @@ if ($provisioningState -ne "PowerState/deallocated")
         Write-Host ""
         Write-Host "   If VM agent needs is NOT in a 'Ready' state after Vm will be recreated, script will stop and encryption process (add ADE extension) needs to be manually resumed or run again this script once VM is in a 'Ready' state" -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "   Keep in mind that even though after VM will be recreated and the encyption process (add ADE extension) will not be started by the script, VM boot process might be successfully and you may troubleshoot the VM agent issue" -ForegroundColor Green
+        Write-Host "   Keep in mind that even though after VM will be recreated and the encryption process (add ADE extension) will not be started by the script, VM boot process might be successfully and you may troubleshoot the VM agent issue" -ForegroundColor Green
     }
 
     Write-Host ""
@@ -395,7 +392,7 @@ if ($provisioningState -ne "PowerState/deallocated")
 # Starting number for the copy
 $i = 1 
 
-# Name of the snapshop of the disk
+# Name of the snapshot of the disk
 $snapshotName = ('snap_' + $i + '_' + $OSDiskName)
 $snapshotNameLength = $snapshotName.Length
 
@@ -410,7 +407,7 @@ $checkIFAnotherSnapIsPresent = Get-AzSnapshot | ?{$_.Name -eq $snapshotName}
 if ($checkIFAnotherSnapIsPresent -eq $null) #if a snapshot with the same name does not exists, use values
 
 {
-# Name of the snapshop of the disk
+# Name of the snapshot of the disk
 $snapshotName = ('snap_' + $i + '_' + $OSDiskName)
 $snapshotNameLength = $snapshotName.Length
 
@@ -560,7 +557,7 @@ Remove-AzSnapshot -ResourceGroupName $OSDiskRg -SnapshotName $snapshotName -Forc
 Write-Host ""
 Write-Host "Checking if the disk is attached to a VM"
 
-#check if disk is attahed to a vm
+#check if disk is attached to a vm
 $DiskAttachedToVM = (Get-AzDisk -ResourceGroupName $OSDiskRg -DiskName $OSDiskName).ManagedBy
 
 if ($DiskAttachedToVM -ne $null) # if 'ManagedBy' property is not $null, means disk is attached to Vm from 'ManagedBy' property
@@ -576,17 +573,17 @@ Write-Host "Disk '$OSDiskName' is attached to VM '$VmNameWhereDiskIsAttached'" -
 $VmWhereDiskIsAttachedObject = Get-AzVM | ?{$_.Name -eq $VmNameWhereDiskIsAttached}
 $OSDiskOfFoundVM = $VmWhereDiskIsAttachedObject.StorageProfile.OsDisk.Name
 
-function Show-DettachMenu
+function Show-DetachMenu
     {
     param (
-        [string]$Title = 'Dettach Menu'
+        [string]$Title = 'Detach Menu'
     )
 
     Write-Host "========================================================================================== $Title ==========================================================================================================="
     Write-Host ""
-    Write-Host "1: Do you want to dettach the disk from Vm if it is attached as a data disk" 
+    Write-Host "1: Do you want to detach the disk from Vm if it is attached as a data disk" 
     Write-Host ""
-    Write-Host "2: Continue since the disk was already dettached or it is an OS disk"
+    Write-Host "2: Continue since the disk was already detached or it is an OS disk"
     Write-Host ""
     Write-Host "Q: Press 'Q' to quit."
     Write-Host ""
@@ -596,14 +593,14 @@ function Show-DettachMenu
 
  do{
      Write-Host ""
-     #call 'Show-DettachMenu' function
-     Show-DettachMenu
+     #call 'Show-DetachMenu' function
+     Show-DetachMenu
      $selection = Read-Host "Please make a selection"
      Write-Host ""
      switch ($selection)
      {
-           '1' {Write-host "You chose option #1. Disk will be dettached" -ForegroundColor green}
-           '2' {Write-host "You chose option #2. Continue since the disk was already dettached or it is an OS disk" -ForegroundColor green}
+           '1' {Write-host "You chose option #1. Disk will be detached" -ForegroundColor green}
+           '2' {Write-host "You chose option #2. Continue since the disk was already detached or it is an OS disk" -ForegroundColor green}
      }
 
    } until ($selection -eq '1' -or $selection -eq '2' -or $selection -eq 'q')
@@ -627,26 +624,26 @@ function Show-DettachMenu
 
          #check if disk is OS disk or data disk
 
-        if ($OSDiskOfFoundVM -eq $OSDiskName) #disk is OS disk, will not dettach and continue
+        if ($OSDiskOfFoundVM -eq $OSDiskName) #disk is OS disk, will not detach and continue
             {
             Write-Host ""
-            Write-host "The disk is the OS disk and cannot be dettached. Will continue"
+            Write-host "The disk is the OS disk and cannot be detached. Will continue"
             }
 
-         if ($OSDiskOfFoundVM -ne $OSDiskName) # disk is data disk, dettaching 
+         if ($OSDiskOfFoundVM -ne $OSDiskName) # disk is data disk, detaching 
             {
             Write-Host ""
-            Write-Host "Dettaching disk..."
+            Write-Host "Detaching disk..."
        
 
-            #Dettach disk from VM
+            #Detach disk from VM
             Remove-AzVMDataDisk -DataDiskNames $OSDiskName -VM $VmWhereDiskIsAttachedObject -ErrorAction Stop | Out-Null
 
             #update VM
             $VmWhereDiskIsAttachedObject | Update-AzVM | Out-Null
 
             Write-Host ""
-            Write-Host "Disk was dettached from VM '$VmNameWhereDiskIsAttached'"
+            Write-Host "Disk was detached from VM '$VmNameWhereDiskIsAttached'"
             }
         }
 
@@ -654,7 +651,7 @@ function Show-DettachMenu
         
          {
         Write-Host ""
-        Write-Host "Dettach operation will not be performed"
+        Write-Host "Detach operation will not be performed"
 
          }
 }
@@ -668,13 +665,13 @@ Write-Host "Disk is not attached to a VM" -ForegroundColor Green
 
 
 ##################################################################
-#      Check if VM is encypted with Dual Pass or not BEK-KEK     #
+#      Check if VM is encrypted with Dual Pass or not BEK-KEK     #
 ###################################################################################################################################################################################
 
 $Check_if_VM_Is_Encrypted_with_Dual_Pass = $import.StorageProfile.OsDisk.EncryptionSettings.Enabled
 $Check_if_VM_Is_Encrypted_with_Dual_Pass_BEK_KEK = $import.StorageProfile.OsDisk.EncryptionSettings.KeyEncryptionKey.keyUrl
 
-if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -eq $null) # Check if VM is encypted with Dual Pass. If yes, continue, if not, script will stop 
+if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -eq $null) # Check if VM is encrypted with Dual Pass. If yes, continue, if not, script will stop 
     {
     Write-Host "Vm is not encrypted with Dual Pass. Script will end" -ForegroundColor Yellow
     Write-Host ""
@@ -687,7 +684,7 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -eq $null) # Check if VM is encypte
     Exit
     }
 
-if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $Check_if_VM_Is_Encrypted_with_Dual_Pass_BEK_KEK -eq $null) # Check if VM is encypted with Dual Pass with BEK. If yes, continue, if not, script will stop 
+if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $Check_if_VM_Is_Encrypted_with_Dual_Pass_BEK_KEK -eq $null) # Check if VM is encrypted with Dual Pass with BEK. If yes, continue, if not, script will stop 
     {
     $EncryptedWithBEK = $true
     Write-host "Checking if VM is encrypted..."
@@ -696,7 +693,7 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $Check_if_VM_Is_Encr
     Write-Host ""
     }
 
-if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $Check_if_VM_Is_Encrypted_with_Dual_Pass_BEK_KEK -ne $null) # Check if VM is encypted with Dual Pass with KEK. If yes, continue, if not, script will stop 
+if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $Check_if_VM_Is_Encrypted_with_Dual_Pass_BEK_KEK -ne $null) # Check if VM is encrypted with Dual Pass with KEK. If yes, continue, if not, script will stop 
     {
     $EncryptedWithKEK = $true
     Write-host "Checking if VM is encrypted..."
@@ -835,7 +832,7 @@ function Show-PermissionsMenu
     Write-Host ""
     Write-Host "1: Permissions will be set automatically as long as your user has access to do this operation" 
     Write-Host ""
-    Write-Host "2: Manually give permissions for the AAD Aplication on keys and secrets from Keyvault: '$keyVaultName' and run again the script"
+    Write-Host "2: Manually give permissions for the AAD Application on keys and secrets from Keyvault: '$keyVaultName' and run again the script"
     Write-Host ""
     Write-Host "3: Confirm that permissions are already set" 
     Write-Host ""
@@ -867,7 +864,7 @@ function Show-NewAadAppMenu
 #     Building  Menu      #
 ###################################################################################################################################################################################
 
-if ($ErrorRetrievingAppID -eq $false) # App ID was retrived successfully from ADE extension, ask for AAD Client Secret. If cx do not have the secret, it will create a new secret
+if ($ErrorRetrievingAppID -eq $false) # App ID was retrieved successfully from ADE extension, ask for AAD Client Secret. If cx do not have the secret, it will create a new secret
 {
 
  do{
@@ -901,10 +898,10 @@ Write-host ""
  }
  }
 
-if ($ErrorRetrievingAppID -eq $true) # if App ID cannot be retrived from ADE extension, ask for AAD Client ID. If cx does not have it, it will create a new AAD application
+if ($ErrorRetrievingAppID -eq $true) # if App ID cannot be retrieved from ADE extension, ask for AAD Client ID. If cx does not have it, it will create a new AAD application
 {
 
-Write-Warning "No Azure disk encyption extension was found installed on VM '$VMName'!"
+Write-Warning "No Azure disk encryption extension was found installed on VM '$VMName'!"
 
  do{
      Write-Host ""
@@ -1067,7 +1064,7 @@ Stop-Transcript | Out-Null
 
             # Output secret to console
              write-host ""
-             Write-Host "This is the new Secret. Please save it since you are not able to retreive it later: $aadClientSecretSec" -ForegroundColor Green
+             Write-Host "This is the new Secret. Please save it since you are not able to retrieve it later: $aadClientSecretSec" -ForegroundColor Green
              Write-Host "" 
              Read-host "Press Enter to continue once you saved the Secret" | Out-Null
 }
@@ -1153,7 +1150,7 @@ Stop-Transcript | Out-Null
 
          catch {
 
-                Write-Host -Foreground Red -Background Black "An error occured! Most probably your user does not have proper permissions to create a new AzADServicePrincipal for AAD Application."
+                Write-Host -Foreground Red -Background Black "An error occurred! Most probably your user does not have proper permissions to create a new AzADServicePrincipal for AAD Application."
                 #Write-Host -Foreground Red -Background Black ($Error[0])
                 Write-Host ""
               }
@@ -1165,8 +1162,8 @@ Stop-Transcript | Out-Null
                 Write-Host "Script will exit"
                 Write-Host ""
 
-                $ErrorOuput = Read-host "Do you want to see the error? (Y\N)"
-                if ($ErrorOuput -eq "y")
+                $ErrorOutput = Read-host "Do you want to see the error? (Y\N)"
+                if ($ErrorOutput -eq "y")
                      {
                      
                      $error
@@ -1186,7 +1183,7 @@ Stop-Transcript | Out-Null
                     Stop-Transcript | Out-Null
                     Exit
                     }
-                if ( $ErrorOuput -ne "y" )
+                if ( $ErrorOutput -ne "y" )
                     {
                      # Calculate elapsed time
                     [int]$endMin = (Get-Date).Minute
@@ -1245,7 +1242,7 @@ Stop-Transcript | Out-Null
          Write-Host "This is the 'AppID' for the new AD Application: $aadClientID" -ForegroundColor Green
          Write-Host "" 
              # Output secret to console
-         Write-Host "This is the 'Secret'. Please save it since you are not able to retreive it later: $aadClientSecretSec" -ForegroundColor Green
+         Write-Host "This is the 'Secret'. Please save it since you are not able to retrieve it later: $aadClientSecretSec" -ForegroundColor Green
          Write-Host "" 
          Read-host "Press Enter to continue once you saved the Secret" | Out-Null
 
@@ -1303,7 +1300,7 @@ Stop-Transcript | Out-Null
      switch ($selection)
      {
            '1' {Write-host "You chose option #1. Permissions will be set automatically as long as your user has access to do this operation" -ForegroundColor green}
-           '2' {Write-host "You chose option #2. Manually give permissions for the AAD Aplication on keys and secrets from Keyvault: '$keyVaultName' and run again the script" -ForegroundColor green}
+           '2' {Write-host "You chose option #2. Manually give permissions for the AAD Application on keys and secrets from Keyvault: '$keyVaultName' and run again the script" -ForegroundColor green}
            '3' {Write-host "You chose option #3. Confirm that permissions are already set" -ForegroundColor green}
      }
 
@@ -1338,7 +1335,7 @@ Write-Host ""
 
 $AccessPoliciesOrRBAC = (Get-AzKeyVault -VaultName $keyVaultName).EnableRbacAuthorization
 
-# If EnableRbacAuthorization is false, that means the permission model is based on Access Policies and we will atempt to set permissions. If this fails, permissions needs to be granted manually by user.
+# If EnableRbacAuthorization is false, that means the permission model is based on Access Policies and we will attempt to set permissions. If this fails, permissions needs to be granted manually by user.
 
 if ($AccessPoliciesOrRBAC -eq $false)
 {
@@ -1556,8 +1553,8 @@ try{
  {
  Write-host "Please resolve the errors and run again the script." -ForegroundColor Yellow
  Write-Host ""
- $ErrorOuput = Read-host "Do you want to see the error? (Y\N)"
- if ($ErrorOuput -eq "y")
+ $ErrorOutput = Read-host "Do you want to see the error? (Y\N)"
+ if ($ErrorOutput -eq "y")
         {
         $error
         Write-Host ""
@@ -1578,7 +1575,7 @@ try{
         Exit
         }
 
- if ($ErrorOuput -eq "n")
+ if ($ErrorOutput -eq "n")
         {
         Write-Host ""
         Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
@@ -1625,8 +1622,8 @@ try{
  {
  Write-host "Please resolve the errors and run again the script." -ForegroundColor Yellow
  Write-Host ""
- $ErrorOuput = Read-host "Do you want to see the error? (Y\N)"
- if ($ErrorOuput -eq "y")
+ $ErrorOutput = Read-host "Do you want to see the error? (Y\N)"
+ if ($ErrorOutput -eq "y")
         {
         $error
         Write-Host ""
@@ -1647,7 +1644,7 @@ try{
         Exit
         }
 
- if ($ErrorOuput -eq "n")
+ if ($ErrorOutput -eq "n")
         {
         Write-Host ""
         Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
@@ -1756,7 +1753,7 @@ Exit
 #            Prepare variables and VMConfig  for VM Creation VM               #
 ###################################################################################################################################################################################
 
-# Get variables vallues from JSON file #
+# Get variables values from JSON file #
 
 #create variables for redeployment 
 $VMRgName = $import.ResourceGroupName; 
@@ -1946,8 +1943,8 @@ if ($VmExistsOrDelete -eq "E")
     if ($ConfirmationToDeleteVM -eq "D")
     {
     
-        # First Dettach data disks from VM           
-        Write-Host "Dettaching data disks from VM ..."
+        # First Detach data disks from VM           
+        Write-Host "Detaching data disks from VM ..."
         Write-Host ""
 
         $DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id
@@ -2045,27 +2042,27 @@ Write-Host ""
     Write-Host "VM was created and is running" -ForegroundColor Green
     Write-Host ""
 
-        # waiting for the VM agent to become ready since encyrption will not be able to start without the VM agen tin a ready state
+        # waiting for the VM agent to become ready since encryption will not be able to start without the VM agent in a ready state
         $MinutesToWait = "5"
         $TimeStart = Get-Date
         $TimeEnd = $TimeStart.addminutes($MinutesToWait)
-        Write-Host "Waiting for the VM agent to become ready or the script will stop after $MinutesToWait minutes since encyrption will not be able to start without the VM agent in a ready state..."
+        Write-Host "Waiting for the VM agent to become ready or the script will stop after $MinutesToWait minutes since encryption will not be able to start without the VM agent in a ready state..."
         Write-Host ""
 
     Do { 
         $TimeNow = Get-Date
-        $VMagentStuatus = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue).VMagent.Statuses.DisplayStatus
+        $VMagentStatus = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue).VMagent.Statuses.DisplayStatus
         Start-Sleep -Seconds 5
         }
-        Until ($TimeNow -ge $TimeEnd -or $VMagentStuatus -eq "Ready")
+        Until ($TimeNow -ge $TimeEnd -or $VMagentStatus -eq "Ready")
 
 
 
-    if ($VMagentStuatus -ne "Ready")
+    if ($VMagentStatus -ne "Ready")
     {
-    Write-host "Script will stop now since VM agent is in a '$VMagentStuatus' state and encyrption will not be able to start without the VM agent in a 'Ready' state" -ForegroundColor Yellow
+    Write-host "Script will stop now since VM agent is in a '$VMagentStatus' state and encryption will not be able to start without the VM agent in a 'Ready' state" -ForegroundColor Yellow
     Write-host ""
-    Write-host "Check if the operating system booted successfully and resolve this issue if it didn't, or start troubleshooting why the Vm Agent is in a '$VMagentStuatus' state" -ForegroundColor Yellow
+    Write-host "Check if the operating system booted successfully and resolve this issue if it didn't, or start troubleshooting why the Vm Agent is in a '$VMagentStatus' state" -ForegroundColor Yellow
     Write-host ""
     Write-host "Once the issues listed above were resolved, either run again this script or manually encrypt this VM" -ForegroundColor Yellow
     Write-host ""
@@ -2128,27 +2125,27 @@ Write-Host ""
     Write-Host "VM was created and is running" -ForegroundColor Green
     Write-Host ""
 
-        # waiting for the VM agent to become ready since encyrption will not be able to start without the VM agent in a ready state
+        # waiting for the VM agent to become ready since encryption will not be able to start without the VM agent in a ready state
         $MinutesToWait = "5"
         $TimeStart = Get-Date
         $TimeEnd = $TimeStart.addminutes($MinutesToWait)
-        Write-Host "Waiting for the VM agent to become ready or the script will stop after $MinutesToWait minutes since encyrption will not be able to start without the VM agent in a ready state..."
+        Write-Host "Waiting for the VM agent to become ready or the script will stop after $MinutesToWait minutes since encryption will not be able to start without the VM agent in a ready state..."
         Write-Host ""
 
     Do { 
         $TimeNow = Get-Date
-        $VMagentStuatus = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue).VMagent.Statuses.DisplayStatus
+        $VMagentStatus = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue).VMagent.Statuses.DisplayStatus
         Start-Sleep -Seconds 5
         }
-        Until ($TimeNow -ge $TimeEnd -or $VMagentStuatus -eq "Ready")
+        Until ($TimeNow -ge $TimeEnd -or $VMagentStatus -eq "Ready")
 
 
 
-    if ($VMagentStuatus -ne "Ready")
+    if ($VMagentStatus -ne "Ready")
     {
-    Write-host "Script will stop now since VM agent is in a '$VMagentStuatus' state and encyrption will not be able to start without the VM agent in a 'Ready' state" -ForegroundColor Yellow
+    Write-host "Script will stop now since VM agent is in a '$VMagentStatus' state and encryption will not be able to start without the VM agent in a 'Ready' state" -ForegroundColor Yellow
     Write-host ""
-    Write-host "Check if the operating system booted successfully and resolve this issue if it didn't, or start troubleshooting why the Vm Agent is in a '$VMagentStuatus' state" -ForegroundColor Yellow
+    Write-host "Check if the operating system booted successfully and resolve this issue if it didn't, or start troubleshooting why the Vm Agent is in a '$VMagentStatus' state" -ForegroundColor Yellow
     Write-host ""
     Write-host "Once the issues listed above were resolved, either run again this script or manually encrypt this VM" -ForegroundColor Yellow
     Write-host ""
@@ -2227,7 +2224,7 @@ Write-Host
 ###################################################################################################################################################################################
 
 
-if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithBEK-eq $true) # Check if VM is encypted with Dual Pass with BEK. If yes, continue, if not, script will stop 
+if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithBEK-eq $true) # Check if VM is encrypted with Dual Pass with BEK. If yes, continue, if not, script will stop 
     {
         Write-Host "VM was Encrypted with Dual Pass (previous version) with BEK"
         Write-Host ""
@@ -2246,14 +2243,14 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithBEK-eq
         Write-Host "AAD App Secret Value: $aadClientSecretSec"
         Write-Host "Encryption Volume Type: $EncryptionVolumeType"
         Write-Host ""
-        Write-Host "ADE extension is installing and VM will rebooted. Wating for VM to come back online..."
+        Write-Host "ADE extension is installing and VM will rebooted. Waiting for VM to come back online..."
 
          if ($WindowsOrLinux -eq "Windows")
         {
         Write-Host ""
         Write-Host "Windows VM will be Encrypted with Dual Pass (previous version) with BEK..."
         Write-Host ""
-        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try RDP to this VM after 5 minutes in case encryption process becames a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
+        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try RDP to this VM after 5 minutes in case encryption process becomes a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
         
         $error.clear()
         try {
@@ -2280,7 +2277,7 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithBEK-eq
         Write-Host ""
         Write-Host "Linux VM will be Encrypted with Dual Pass (previous version) with BEK..."
         Write-Host ""
-        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try SSH to this VM after 5 minutes in case encryption process becames a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
+        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try SSH to this VM after 5 minutes in case encryption process becomes a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
         
         $error.clear()
         Try {
@@ -2301,7 +2298,7 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithBEK-eq
         }
     }
 
-if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithKEK-eq $true) # Check if VM is encypted with Dual Pass with KEK. If yes, continue, if not, script will stop 
+if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithKEK-eq $true) # Check if VM is encrypted with Dual Pass with KEK. If yes, continue, if not, script will stop 
     {
 
         #Encrypt the disks of an existing IaaS VM
@@ -2323,7 +2320,7 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithKEK-eq
         Write-Host ""
         Write-Host "==================================================================================================================================================================================================================="
         Write-Host ""
-        Write-Host "ADE extension is installing and VM will rebooted. Wating for VM to come back online..."
+        Write-Host "ADE extension is installing and VM will rebooted. Waiting for VM to come back online..."
 
 
 
@@ -2332,7 +2329,7 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithKEK-eq
         Write-Host ""
         Write-Host "Windows VM will be Encrypted with Dual Pass (previous version) with KEK..."
         Write-Host ""
-        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try RDP to this VM after 5 minutes in case encryption process becames a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
+        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try RDP to this VM after 5 minutes in case encryption process becomes a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
         
         $error.clear()
         try {
@@ -2359,7 +2356,7 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithKEK-eq
         Write-Host ""
         Write-Host "Linux VM will be Encrypted with Dual Pass (previous version) with KEK..."
         Write-Host ""
-        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try SSH to this VM after 5 minutes in case encryption process becames a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
+        Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try SSH to this VM after 5 minutes in case encryption process becomes a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
         
         $error.clear()
         try{
@@ -2403,15 +2400,15 @@ Write-Host "Backup Disk was deleted" -ForegroundColor green
 }
 
 ################################################################################################################################
-#   Output previous Cache settings for data disks since durring Vm creation, cache setting for all data disks was set to none  #
+#   Output previous Cache settings for data disks since durning Vm creation, cache setting for all data disks was set to none  #
 ###################################################################################################################################################################################
 
 Write-host ""
 Write-host "Host cache was set to none for all data disks" -ForegroundColor Yellow
 Write-host ""
 
- $DataDisksPreviousCacheSettingsOuput = Read-host "Do you want to see the previous cache settings for all data disks to set the cache manually? (Y\N)"
- if ($DataDisksPreviousCacheSettingsOuput -eq "y")
+ $DataDisksPreviousCacheSettingsOutput = Read-host "Do you want to see the previous cache settings for all data disks to set the cache manually? (Y\N)"
+ if ($DataDisksPreviousCacheSettingsOutput -eq "y")
         {
         Write-host ""
         Write-host "Caching options: None = 0, Read = 1, Read\Write = 2. Check the 'caching' property in the Data disk(s) settings stored and listed below:" -ForegroundColor Yellow
@@ -2437,7 +2434,7 @@ Write-host ""
         Exit
         }
 
- if ($DataDisksPreviousCacheSettingsOuput -eq "n")
+ if ($DataDisksPreviousCacheSettingsOutput -eq "n")
         {
 
         # Calculate elapsed time
