@@ -17,7 +17,7 @@ $StartTimeMinute = (Get-Date).Minute
 $StartTimeSecond = (Get-Date).Second
 
 Write-Host ""
-Write-Warning "Please use a fresh opened page of Azure Cloud Shell before runnig the script, since Azure Cloud Shell has a timeout period."
+Write-Warning "Please use a fresh opened page of Azure Cloud Shell before running the script, since Azure Cloud Shell has a timeout period."
 Write-Warning "If Azure Cloud Shell times out while running the script, the script will stop at the time of the timeout."
 Write-Host ""
 Write-Host "Starting to write in log file '$HOME/CreateRescueVMScript_Execution_log.txt' for troubleshooting purposes"
@@ -58,16 +58,16 @@ catch {}
 
 if ($error)
 {
-Write-Host ""
-Write-Host "VM '$VmName' was not found in resource group '$VMRgName'" -ForegroundColor Red
-Write-Host ""
-Write-Host ""
-Write-Host "Log file '$HOME/CreateRescueVMScript_Execution_log.txt' was successfully saved"
-Write-Host ""
-Stop-Transcript | Out-Null
-Write-host 
-Write-Host "Script will exit"
-Exit
+    Write-Host ""
+    Write-Host "VM '$VmName' was not found in resource group '$VMRgName'" -ForegroundColor Red
+    Write-Host ""
+    Write-Host ""
+    Write-Host "Log file '$HOME/CreateRescueVMScript_Execution_log.txt' was successfully saved"
+    Write-Host ""
+    Stop-Transcript | Out-Null
+    Write-host 
+    Write-Host "Script will exit"
+    Exit
 }
 $error.clear()
 
@@ -75,7 +75,6 @@ $error.clear()
 # Get Keyvault Name from secret URL
 $vm = Get-AzVm -ResourceGroupName $VMRgName -Name $vmName
 $OSDiskName = $vm.StorageProfile.OsDisk.Name 
-$OSDiskRGName = (Get-AzResource -Name $OSDiskName).ResourceGroupName
 $OSDisk = Get-AzDisk | ?{($_.ManagedBy -eq $vm.id) -and ($_.name -eq $OSDiskName)}
 $secretUrl = $OSDisk.EncryptionSettingsCollection.EncryptionSettings.DiskEncryptionKey.SecretUrl
 $secretUri = [System.Uri] $secretUrl;
@@ -91,7 +90,7 @@ $keyVaultName = $secretUri.Host.Split('.')[0];
 
 $AccessPoliciesOrRBAC = (Get-AzKeyVault -VaultName $keyVaultName).EnableRbacAuthorization
 
-# If EnableRbacAuthorization is false, that means the permission model is based on Access Policies and we will atempt to set permissions. If this fails, permissions needs to be granted manually by user.
+# If EnableRbacAuthorization is false, that means the permission model is based on Access Policies and we will attempt to set permissions. If this fails, permissions needs to be granted manually by user.
 
 if ($AccessPoliciesOrRBAC -eq $false)
 {
@@ -111,7 +110,7 @@ catch {
   Write-Host -Foreground Red -Background Black "Oops, ran into an issue:"
   Write-Host -Foreground Red -Background Black ($Error[0])
   Write-Host ""
-}
+    }
 
 # if there is not error on the set permission operation, permissions were set successfully
 if (!$error)
@@ -220,7 +219,7 @@ if ($error)
 }
 
 
-#If EnableRbacAuthorization is true, that means the permission model is based on RBAC and we will not atempt to set permissions. Permissions needs to be granted manually by user.
+#If EnableRbacAuthorization is true, that means the permission model is based on RBAC and we will not attempt to set permissions. Permissions needs to be granted manually by user.
 
 if ($AccessPoliciesOrRBAC -eq $true)
 {
@@ -385,7 +384,7 @@ if ($error)
 
 $SecretURL= $vm.StorageProfile.OsDisk.EncryptionSettings.DiskEncryptionKey.SecretUrl 
 
-#$SecretURL is $null, there are no enctyption settings on this VM, script will stop. If $SecretURL is NOT $null VM has enctyption settings in the VM model and continue.
+#$SecretURL is $null, there are no encryption settings on this VM, script will stop. If $SecretURL is NOT $null VM has encryption settings in the VM model and continue.
 
 if ($SecretURL -eq $null) #
 {
@@ -512,7 +511,7 @@ $snapshotConfig =  New-AzSnapshotConfig -SourceUri $diskId -Location $location -
 # Starting number for the copy
 $i = 1 
 
-# Name of the snapshop of the disk
+# Name of the snapshot of the disk
 $snapshotName = ('snap_' + $i + '_' + $DiskName)
 $snapshotNameLength = $snapshotName.Length
 
@@ -527,7 +526,7 @@ $checkIFAnotherSnapIsPresent = Get-AzSnapshot | ?{$_.Name -eq $snapshotName}
 if ($checkIFAnotherSnapIsPresent -eq $null) #if a snapshot with the same name does not exists, use values
 
 {
-# Name of the snapshop of the disk
+# Name of the snapshot of the disk
 $snapshotName = ('snap_' + $i + '_' + $DiskName)
 $snapshotNameLength = $snapshotName.Length
 
@@ -665,7 +664,7 @@ Write-Host ""
 write-host "Deleting the snapshot of the OS disk of VM: '$VmName'"
 Remove-AzSnapshot -ResourceGroupName $RescueVmRg -SnapshotName $snapshotName -Force | Out-Null
 
-#Remove the encryption settings from the disk and attach it to the testvm using the PowerShell commands
+#Remove the encryption settings from the disk and attach it to the rescue vm using the PowerShell commands
 Write-Host ""
 Write-host "Removing encryption settings for the copy of the disk that was created"
 New-AzDiskUpdateConfig -EncryptionSettingsEnabled $false |Update-AzDisk -diskName $NewDiskName -ResourceGroupName $RescueVmRg | Out-Null
@@ -1148,8 +1147,8 @@ New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine 
 #Wait until VM guest agent becomes ready
 do {
 Start-Sleep -Seconds 5
-$VMagentStuatus = (Get-AzVM -ResourceGroupName $RescueVmRg -Name $RescueVmName -Status).VMagent.Statuses.DisplayStatus
-} until ($VMagentStuatus -eq "Ready")
+$VMagentStatus = (Get-AzVM -ResourceGroupName $RescueVmRg -Name $RescueVmName -Status).VMagent.Statuses.DisplayStatus
+} until ($VMagentStatus -eq "Ready")
 
 
 ##############################################################################
@@ -1170,8 +1169,8 @@ $RescueVMObject| Update-AzVM | Out-Null # the update operation will restart VM
 #Wait until VM guest agent becomes ready
 do {
 Start-Sleep -Seconds 5
-$VMagentStuatus = (Get-AzVM -ResourceGroupName $RescueVmRg -Name $RescueVmName -Status -ErrorAction SilentlyContinue).VMagent.Statuses.DisplayStatus
-} until ($VMagentStuatus -eq "Ready")
+$VMagentStatus = (Get-AzVM -ResourceGroupName $RescueVmRg -Name $RescueVmName -Status -ErrorAction SilentlyContinue).VMagent.Statuses.DisplayStatus
+} until ($VMagentStatus -eq "Ready")
 
 
 if ($WindowsOrLinux -eq "Windows")
