@@ -1547,44 +1547,18 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/azure-cli-extens
 # Invoke the command on the VM, using the local file
 Invoke-AzVMRunCommand -Name $RescueVmName -ResourceGroupName $RescueVmRg -CommandId 'RunShellScript' -ScriptPath $PathScriptUnlockAndMountDisk | Out-Null
 
-<#Test if script file exists in cloud shell drive
-
-$PathScriptUnlockDisk = "$HOME/Unlock-Disk-Linux"
-$TestPath = Test-Path -Path $PathScriptUnlockDisk
-if($TestPath -eq $true)
-{Remove-Item -Path $PathScriptUnlockDisk}
-
-
-#Creating 'Unlock-Disk' Script
-
-('mkdir /var/log/vmrepair') > $PathScriptUnlockDisk
-
-('wget https://raw.githubusercontent.com/Azure/azure-cli-extensions/main/src/vm-repair/azext_vm_repair/scripts/linux-mount-encrypted-disk.sh -P /var/log/vmrepair') >> $PathScriptUnlockDisk
-
-('chmod +x /var/log/vmrepair/linux-mount-encrypted-disk.sh') >> $PathScriptUnlockDisk
-
-('/var/log/vmrepair/linux-mount-encrypted-disk.sh') >> $PathScriptUnlockDisk
-
-# Invoke the command on the VM, using the local file
-Invoke-AzVMRunCommand -Name $RescueVmName -ResourceGroupName $RescueVmRg -CommandId 'RunShellScript' -ScriptPath $PathScriptUnlockDisk | Out-Null
-#>
-
-
-
-
-#>
 Write-Host ""
 Write-host "Rescue VM was successfully configured and created" -ForegroundColor green
 
 Write-Host ""
 Write-host "You can SSH to the Rescue VM"
 
-#removing all necesary script from Azure Cloud Drive
+#removing all used scripst from Azure Cloud Drive
 
-
-#Remove-Item $PathScriptUnlockDisk
-#Remove-Item $PathScriptInstallHyperVRole
-#Remove-Item $PathScriptEnableNested
+Remove-Item $PathScriptUnlockDisk
+Remove-Item $PathScriptInstallHyperVRole
+Remove-Item $PathScriptEnableNested
+Remove-Item $PathScriptUnlockAndMountDisk
 
 
 # Calculate elapsed time
