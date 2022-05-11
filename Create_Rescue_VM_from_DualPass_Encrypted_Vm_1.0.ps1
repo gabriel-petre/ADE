@@ -1502,6 +1502,7 @@ Remove-Item $PathScriptInstallHyperVRole
 Remove-Item $PathScriptEnableNested
 
 
+
 # Calculate elapsed time
 $EndTimeMinute = (Get-Date).Minute
 $EndTimeSecond = (Get-Date).Second
@@ -1541,8 +1542,9 @@ Write-host "Unlocking attached disk..."
 
 # Downloading the unlock script for Linux VMs in $HOME directory of cloud drive
 
+$ProgressPreference = 'SilentlyContinue'
 $PathScriptUnlockAndMountDisk = "$home/linux-mount-encrypted-disk.sh"
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/azure-cli-extensions/main/src/vm-repair/azext_vm_repair/scripts/linux-mount-encrypted-disk.sh" -OutFile $PathScriptUnlockAndMountDisk | Out-File
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/azure-cli-extensions/main/src/vm-repair/azext_vm_repair/scripts/linux-mount-encrypted-disk.sh" -OutFile $PathScriptUnlockAndMountDisk | Out-Null
 
 # Invoke the command on the VM, using the local file
 Invoke-AzVMRunCommand -Name $RescueVmName -ResourceGroupName $RescueVmRg -CommandId 'RunShellScript' -ScriptPath $PathScriptUnlockAndMountDisk | Out-Null
@@ -1554,10 +1556,6 @@ Write-Host ""
 Write-host "You can SSH to the Rescue VM"
 
 #removing all used scripst from Azure Cloud Drive
-
-Remove-Item $PathScriptUnlockDisk
-Remove-Item $PathScriptInstallHyperVRole
-Remove-Item $PathScriptEnableNested
 Remove-Item $PathScriptUnlockAndMountDisk
 
 
