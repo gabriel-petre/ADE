@@ -151,7 +151,7 @@ if ($error)
         Write-Host "Script execution time: $ElapsedTime minutes"
 
         Write-Host ""
-        Write-Host "Log file '$HOME/log.txt' was successfully saved"
+        Write-Host "Log file '$HOME/CreateRescueVMScript_Execution_log.txt' was successfully saved"
         Write-Host ""
 
         Stop-Transcript | Out-Null
@@ -206,7 +206,7 @@ if ($error)
     Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
 
     Write-Host ""
-    Write-Host "Log file '$HOME/log.txt' was successfully saved"
+    Write-Host "Log file '$HOME/CreateRescueVMScript_Execution_log.txt' was successfully saved"
     Write-Host ""
 
     Stop-Transcript | Out-Null
@@ -296,7 +296,7 @@ if ($error)
         Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
 
         Write-Host ""
-        Write-Host "Log file '$HOME/log.txt' was successfully saved"
+        Write-Host "Log file '$HOME/CreateRescueVMScript_Execution_log.txt' was successfully saved"
         Write-Host ""
 
         Stop-Transcript | Out-Null
@@ -355,7 +355,7 @@ if ($error)
     Write-Host "`n`nExecution Time : " $DiffMinutesEdit " Minutes and $DiffSecondsEdit seconds" -BackgroundColor DarkCyan
 
     Write-Host ""
-    Write-Host "Log file '$HOME/log.txt' was successfully saved"
+    Write-Host "Log file '$HOME/CreateRescueVMScript_Execution_log.txt' was successfully saved"
     Write-Host ""
 
     Stop-Transcript | Out-Null
@@ -402,9 +402,9 @@ if ($SecretURL -eq $null) #
 }
 
 
-#################################################
-#   Check if VM was encrypted with BEK or KEK   #
-#################################################
+##########################################################################
+#         VM is encrypted with BEK -  Output encryption settings         #
+##########################################################################
 
 
 #get KeyUrl to see if it is null or contains settings.
@@ -439,7 +439,7 @@ If ($KeyUrlTemp -eq $null)
 
 
 ##########################################################################
-#         VM is encrypted with KEK -  Clearing Encryption settings       #
+#         VM is encrypted with KEK -  Output encryption settings         #
 ##########################################################################
 
 
@@ -1152,7 +1152,7 @@ $VMagentStatus = (Get-AzVM -ResourceGroupName $RescueVmRg -Name $RescueVmName -S
 
 
 ##############################################################################
-#                   Move encryption settings on the rescue VM                #
+#                   Copy encryption settings to the rescue VM                #
 ##############################################################################
 
 $vm = Get-AzVm -ResourceGroupName $VMRgName -Name $vmName
@@ -1460,7 +1460,7 @@ If ($enablenested)
         ('New-NetIPAddress -IPAddress 192.168.0.1 -PrefixLength 24 -InterfaceAlias "vEthernet (Nested-VMs)"') >> $PathScriptEnableNested
 
         #Create a DHCP scope that will be used to automatically assign IP to the nested VMs.
-        # Make sure you use a valid DNS server so the VMs can connect to the internet. In this example, we are using 8.8.8.8 which is Google’s public DNS
+        # Make sure you use a valid DNS server so the VMs can connect to the internet. In this example, we are using 8.8.8.8 which is Googleâ€™s public DNS
         ('Add-DhcpServerV4Scope -Name "Nested-VMs" -StartRange 192.168.0.2 -EndRange 192.168.0.254 -SubnetMask 255.255.255.0') >> $PathScriptEnableNested
         ('Set-DhcpServerV4OptionValue -DnsServer 8.8.8.8 -Router 192.168.0.1') >> $PathScriptEnableNested 
 
@@ -1497,10 +1497,9 @@ Write-host "You can RDP to the Rescue VM"
 
 #removing all necesary script from Azure Cloud Drive
 
-
-#Remove-Item $PathScriptUnlockDisk
-#Remove-Item $PathScriptInstallHyperVRole
-#Remove-Item $PathScriptEnableNested
+Remove-Item $PathScriptUnlockDisk
+Remove-Item $PathScriptInstallHyperVRole
+Remove-Item $PathScriptEnableNested
 
 
 # Calculate elapsed time
@@ -1540,7 +1539,15 @@ Write-host "Unlocking attached disk..."
 #######################################################################################
 
 
-#Test if script file exists in cloud shell drive
+# Downloading the unlock script for Linux VMs in $HOME directory of cloud drive
+
+$PathScriptUnlockAndMountDisk = "$home/linux-mount-encrypted-disk.sh"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/azure-cli-extensions/main/src/vm-repair/azext_vm_repair/scripts/linux-mount-encrypted-disk.sh" -OutFile $PathScriptUnlockAndMountDisk | Out-File
+
+# Invoke the command on the VM, using the local file
+Invoke-AzVMRunCommand -Name $RescueVmName -ResourceGroupName $RescueVmRg -CommandId 'RunShellScript' -ScriptPath $PathScriptUnlockAndMountDisk | Out-Null
+
+<#Test if script file exists in cloud shell drive
 
 $PathScriptUnlockDisk = "$HOME/Unlock-Disk-Linux"
 $TestPath = Test-Path -Path $PathScriptUnlockDisk
@@ -1560,6 +1567,9 @@ if($TestPath -eq $true)
 
 # Invoke the command on the VM, using the local file
 Invoke-AzVMRunCommand -Name $RescueVmName -ResourceGroupName $RescueVmRg -CommandId 'RunShellScript' -ScriptPath $PathScriptUnlockDisk | Out-Null
+#>
+
+
 
 
 #>
