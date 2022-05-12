@@ -228,7 +228,7 @@ function ExportVMConfigurationMenu
    {
        # Name of the Vm configuration JSON file
         $TimeNow = get-date -f "yyyy-MM-dd_HH:mm:ss"
-        $Path_JSON_Vm_Settings = "$HOME/VM_" + "$VmName" + "_Settings_" + "$i" + '_' + "$TimeNow" + ".json"
+        $Path_JSON_Vm_Settings = "$HOME/VM_" + "$VmName" + "_Settings_" + "$TimeNow" + ".json"
         $json_fullpath = $Path_JSON_Vm_Settings 
 
         #export Vm config to JSON
@@ -705,7 +705,7 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $Check_if_VM_Is_Encr
 
     
 ###############################################################################################
-#        Get AzureDiskEncryption extension config from file and store them in variables       #
+#        Get encryption settings from file and store them in variables       #
 ###################################################################################################################################################################################
 
 
@@ -2379,9 +2379,9 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithKEK-eq
     }
 
 
-########################################################################
-#   Delete the backup disk that was created before running the script  #
-########################################################################
+##############################################################################
+#   Delete the backup disk that was created at the beginning of the script   #
+##############################################################################
 
     
 Write-Host ""
