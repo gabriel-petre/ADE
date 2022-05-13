@@ -708,11 +708,19 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $Check_if_VM_Is_Encr
 #        Get encryption settings from file and store them in variables       #
 ###################################################################################################################################################################################
 
+if ($EncryptedWithBEK -eq $true)
+{
+$SecretUrl = ($import.StorageProfile.OsDisk.EncryptionSettings.DiskEncryptionKey.SecretUrl).ToLower()
+$DiskEncryptionKeyVaultID = ($import.StorageProfile.OsDisk.EncryptionSettings.DiskEncryptionKey.SourceVault.Id).ToLower()
+}
 
+if ($EncryptedWithKEK -eq $true)
+{
 $SecretUrl = ($import.StorageProfile.OsDisk.EncryptionSettings.DiskEncryptionKey.SecretUrl).ToLower()
 $DiskEncryptionKeyVaultID = ($import.StorageProfile.OsDisk.EncryptionSettings.DiskEncryptionKey.SourceVault.Id).ToLower()
 $keyEncryptionKeyUrl = ($import.StorageProfile.OsDisk.EncryptionSettings.KeyEncryptionKey.keyurl).ToLower()
 $KeyVaultIDforKey = ($import.StorageProfile.OsDisk.EncryptionSettings.KeyEncryptionKey.SourceVault.id).ToLower()
+}
 
 $CharArray = $DiskEncryptionKeyVaultID.Split("/")
 $diskEncryptionKeyVaultUrlTemp = $CharArray[8]
