@@ -660,6 +660,7 @@ if ($DiskAttachedToVM -eq $null)
 {
 Write-Host ""
 Write-Host "Disk is not attached to a VM" -ForegroundColor Green
+Write-Host ""
 }
 
 
