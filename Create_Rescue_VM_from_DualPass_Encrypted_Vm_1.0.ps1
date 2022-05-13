@@ -1498,9 +1498,12 @@ Write-host "You can RDP to the Rescue VM"
 #removing all necesary script from Azure Cloud Drive
 
 Remove-Item $PathScriptUnlockDisk
+
+If ($enablenested)
+{
 Remove-Item $PathScriptInstallHyperVRole
 Remove-Item $PathScriptEnableNested
-
+}
 
 
 # Calculate elapsed time
