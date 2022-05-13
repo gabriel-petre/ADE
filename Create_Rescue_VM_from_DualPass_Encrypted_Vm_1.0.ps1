@@ -832,7 +832,8 @@ $RedHatDefaultPublisher = "Redhat"
 $RedHatDefaultOffer = "RHEL"
 $RedHatDefaultSku = "8.2"
 
-#Suse
+#
+
 $SuseDefaultPublisher = "SUSE"
 $SuseDefaultOffer = "sles-15-sp3"
 $SuseDefaultSku = "gen1"
@@ -862,7 +863,7 @@ function DefaultMenu
     Write-Host ""
     Write-Host "2: Create VM '$RescueVmName' from generation 1 RedHat default image (RedHat 8.2 -latest_version)"
     Write-Host ""
-    Write-Host "3: Create VM '$RescueVmName' from generation 1 Suse default image (Suse 15.3 SP3' - latest_version)"
+    Write-Host "3: Create VM '$RescueVmName' from generation 1 Suse default image (Suse 15.3 SP3 - latest_version)"
     Write-Host ""
     Write-Host "4: Create VM '$RescueVmName' from generation 1 CentOS default image (CentOS 8.2 - latest_version)"
     Write-Host ""
