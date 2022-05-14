@@ -1918,7 +1918,6 @@ $DataDisksLUN = 0
 Write-host "The operating system is Linux"
 Write-host ""
 Set-AzVmOSDisk -VM $vmConfig -ManagedDiskId $OSDiskID -DiskEncryptionKeyUrl $SecretUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -Linux -CreateOption Attach -ErrorAction Stop | Out-Null
-
 }
 
 
@@ -2043,8 +2042,8 @@ Write-Host ""
     Write-Host "Waiting for VM status to change in 'running'..." # for testing purposes
    do {
        Start-Sleep -Seconds 3
-       $VMpowerState = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue). Statuses[1].DisplayStatus
-
+       try {$VMpowerState = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue). Statuses[1].DisplayStatus}
+        catch {}
         }until ($VMpowerState -eq "VM running")
     
     Write-Host ""
@@ -2126,7 +2125,8 @@ Write-Host ""
     Write-Host "Waiting for VM status to change in 'running'..." # for testing purposes
    do {
        Start-Sleep -Seconds 3
-       $VMpowerState = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue). Statuses[1].DisplayStatus
+       try {$VMpowerState = (Get-AzVM -ResourceGroupName $VMRgName -Name $VmName -Status -ErrorAction SilentlyContinue). Statuses[1].DisplayStatus}
+       catch {}
 
         }until ($VMpowerState -eq "VM running")
     
@@ -2283,11 +2283,38 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithBEK-eq
 
         if ($WindowsOrLinux -eq "Linux")
         {
+        <# Removing a previous ADE extension Configuration file (/var/lib/azure_disk_encryption_config/azure_crypt_params.ini). This parameter file tell us what were the previously used encryption parameters
+        This is because if a new AAD App was created and a new secret, encrytion wil fail with errror bellow, since the "azure_crypt_params.ini" file stores values of previous AAD Client ID and secret
+        Error: "Encryption settings updated is not a valid versioned Key Vault Secret URL. It should be in the format https://<vaultEndpoint>/secrets/<secretName>/<secretVersion>"
+
+        Also removing "azure_crypt_params.ini" parameter file, and later on if user will try to update the Key, this will not update, because is making extension think that it is first time enable and hence settings are not getting updated.
+
+        To mittigate this, we will create an empty azure_crypt_params.ini file
+        #>
+
+        Write-Host ""
+        Write-Host "Removing a previous ADE extension parameter file..."
+        $PathScriptRemoveParameterFile = "$HOME/RemoveParameterFile"
+        $TestPath = Test-Path -Path $PathScriptRemoveParameterFile
+        if($TestPath -eq $true)
+        {Remove-Item -Path $PathScriptRemoveParameterFile}     
+
+         # commands:
+        ('mkdir /var/lib/azure_disk_encryption_backup_config/') > $PathScriptRemoveParameterFile
+
+        ('rsync -a --delete /var/lib/azure_disk_encryption_config/* /var/lib/azure_disk_encryption_backup_config/') >> $PathScriptRemoveParameterFile
+
+        ('rm -rf /var/lib/azure_disk_encryption_config/azure_crypt_params.ini') >> $PathScriptRemoveParameterFile # removing file
+
+        # Invoke the command on the VM, using the local file
+        Invoke-AzVMRunCommand -Name $VmName -ResourceGroupName $VMRgName -CommandId 'RunShellScript' -ScriptPath $PathScriptRemoveParameterFile | Out-Null
+
         Write-Host ""
         Write-Host "Linux VM will be Encrypted with Dual Pass (previous version) with BEK..."
         Write-Host ""
         Write-Host "During this process you can verify if the ADE extension status is changing to 'Provisioning succeeded', VM status is 'Running' and try SSH to this VM after 5 minutes in case encryption process becomes a long running operation for some reason (like VM Agent not running), but VM might still be successfully encrypted" -ForegroundColor Yellow
         
+
         $error.clear()
         Try {
         $sequenceVersion = [Guid]::NewGuid();
@@ -2301,9 +2328,23 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithBEK-eq
             Write-Host ""
             Write-Host "The installation process for ADE extension failed. Vm should have booted correctly. Try to encrypt this VM manually" -ForegroundColor Yellow
             }
-
+        
         Write-host ""
         Write-host "Vm was encrypted successfully and is up and running!" -ForegroundColor green
+
+        Write-Host ""
+        Write-Host "Creating parameter file..."
+        $PathScriptCreatingParameterFile = "$HOME/CreatingParameterFile"
+        $TestPath = Test-Path -Path $PathScriptCreatingParameterFile
+        if($TestPath -eq $true)
+        {Remove-Item -Path $PathScriptCreatingParameterFile}    
+
+        # command
+        ('touch /var/lib/azure_disk_encryption_config/azure_crypt_params.ini') > $PathScriptCreatingParameterFile # creating a blank file with the same name
+
+        # Invoke the command on the VM, using the local file
+        Invoke-AzVMRunCommand -Name $VmName -ResourceGroupName $VMRgName -CommandId 'RunShellScript' -ScriptPath $PathScriptCreatingParameterFile | Out-Null
+
         }
     }
 
@@ -2362,6 +2403,32 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithKEK-eq
 
          if ($WindowsOrLinux -eq "Linux")
         {
+        <# Removing a previous ADE extension Configuration file (/var/lib/azure_disk_encryption_config/azure_crypt_params.ini). This parameter file tell us what were the previously used encryption parameters
+        This is because if a new AAD App was created and a new secret, encrytion wil fail with errror bellow, since the "azure_crypt_params.ini" file stores values of previous AAD Client ID and secret
+        Error: "Encryption settings updated is not a valid versioned Key Vault Secret URL. It should be in the format https://<vaultEndpoint>/secrets/<secretName>/<secretVersion>"
+
+        Also removing "azure_crypt_params.ini" parameter file, and later on if user will try to update the Key, this will not update, because is making extension think that it is first time enable and hence settings are not getting updated.
+
+        To mittigate this, we will create an empty azure_crypt_params.ini file
+        #>
+
+        Write-Host ""
+        Write-Host "Removing a previous ADE extension parameter file..."
+        $PathScriptRemoveParameterFile = "$HOME/RemoveParameterFile"
+        $TestPath = Test-Path -Path $PathScriptRemoveParameterFile
+        if($TestPath -eq $true)
+        {Remove-Item -Path $PathScriptRemoveParameterFile}     
+
+         # commands:
+        ('mkdir /var/lib/azure_disk_encryption_backup_config/') > $PathScriptRemoveParameterFile
+
+        ('rsync -a --delete /var/lib/azure_disk_encryption_config/* /var/lib/azure_disk_encryption_backup_config/') >> $PathScriptRemoveParameterFile
+
+        ('rm -rf /var/lib/azure_disk_encryption_config/azure_crypt_params.ini') >> $PathScriptRemoveParameterFile # removing file
+
+        # Invoke the command on the VM, using the local file
+        Invoke-AzVMRunCommand -Name $VmName -ResourceGroupName $VMRgName -CommandId 'RunShellScript' -ScriptPath $PathScriptRemoveParameterFile | Out-Null
+
         Write-Host ""
         Write-Host "Linux VM will be Encrypted with Dual Pass (previous version) with KEK..."
         Write-Host ""
@@ -2383,6 +2450,19 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithKEK-eq
 
         Write-host ""
         Write-host "Vm was encrypted successfully and is up and running!" -ForegroundColor green
+
+        Write-Host ""
+        Write-Host "Creating parameter file..."
+        $PathScriptCreatingParameterFile = "$HOME/CreatingParameterFile"
+        $TestPath = Test-Path -Path $PathScriptCreatingParameterFile
+        if($TestPath -eq $true)
+        {Remove-Item -Path $PathScriptCreatingParameterFile}    
+
+        # command
+        ('touch /var/lib/azure_disk_encryption_config/azure_crypt_params.ini') > $PathScriptCreatingParameterFile # creating a blank file with the same name
+
+        # Invoke the command on the VM, using the local file
+        Invoke-AzVMRunCommand -Name $VmName -ResourceGroupName $VMRgName -CommandId 'RunShellScript' -ScriptPath $PathScriptCreatingParameterFile | Out-Null
 
         }
     }
