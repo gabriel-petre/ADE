@@ -4,6 +4,7 @@
    [Parameter(Mandatory = $true)] [String] $VMRgName,
    [Parameter(Mandatory = $true)] [String] $RescueVmName,
    [Parameter(Mandatory = $true)] [String] $RescueVmRg,
+   [Parameter(Mandatory = $true)] [String] $CopyDiskName,
    [Parameter(Mandatory = $true)] [String] $RescueVmUserName,
    [Parameter(Mandatory = $true)] [String] $RescueVmPassword,
    [Parameter(Mandatory = $true)] [String] $SubscriptionID,
@@ -578,32 +579,26 @@ $OsdiskType = $Osdisk.Sku.Name
 $Snapshot = Get-AzSnapshot -SnapshotName $snapshotName -ResourceGroupName $RescueVmRg
 
 # Name of the copy of the disk
-$NewDiskName = ('fixed_' + $i + '_'+ $DiskName)
-$NewDiskNameLength = $NewDiskName.Length
-
-    If ($NewDiskNameLength -gt "50")
-    {
-    $NewDiskName = $NewDiskName.Substring(0,$NewDiskName.Length-10)
-    }
 
 # check IF Another Copy fo the disk with the same name already exists
-$checkIFAnotherCopyIsPresent = Get-AzDisk | ?{$_.Name -eq $NewDiskName} 
+$checkIFAnotherCopyIsPresent = Get-AzDisk | ?{$_.Name -eq $CopyDiskName} 
 
 if ($checkIFAnotherCopyIsPresent -eq $null) #if a disk with the same name does not exists, use values
 
 {
 
 # Name of the copy of the disk
-$NewDiskName = ('fixed_' + $i + '_'+ $DiskName)
-$NewDiskNameLength = $NewDiskName.Length
+$CopyDiskNameLength = $CopyDiskName.Length
 
-    If ($NewDiskNameLength -gt "50")
+    If ($CopyDiskNameLength -gt "50")
     {
-    $NewDiskName = $NewDiskName.Substring(0,$NewDiskName.Length-10)
+    Write-Host ""
+    Write-Host "The number of characters is greater than 50. The name will be truncated"
+    $CopyDiskName = $CopyDiskName.Substring(0,$CopyDiskName.Length-10)
     }
 
     Write-Host ""
-    Write-Host "A copy of the disk with the name '$NewDiskName' will be created" -ForegroundColor yellow
+    Write-Host "A copy of the disk with the name '$CopyDiskName' will be created" -ForegroundColor yellow
 }
 
 if ($checkIFAnotherCopyIsPresent -ne $null) #if a disk with the same name already exists, add an increment of $i to name of thi disk
@@ -612,25 +607,25 @@ if ($checkIFAnotherCopyIsPresent -ne $null) #if a disk with the same name alread
     do{
     # check if a disk with the same name already exists
     Write-Host ""
-    Write-Host "A disk with the same name '$NewDiskName' already exists. Searching for an available name..." -ForegroundColor Yellow
-    $i++
+    Write-Host "A disk with the same name '$CopyDiskName' already exists!" -ForegroundColor Yellow
 
-    #Create the names of the disk
-    $NewDiskName = ('fixed_' + $i + '_'+ $DiskName)
+    $CopyDiskName = Read-Host "Enter a different name for the copy of the disk"
 
     # reduce the name of the Disk
-    $NewDiskNameLength = $NewDiskName.Length
-    If ($NewDiskNameLength -gt "50")
+    $CopyDiskNameLength = $CopyDiskName.Length
+    If ($CopyDiskNameLength -gt "50")
         {
-        $NewDiskName = $NewDiskName.Substring(0,$NewDiskName.Length-10)
+        Write-Host ""
+        Write-Host "The number of characters is greater than 50. The name will be truncated"
+        $CopyDiskName = $CopyDiskName.Substring(0,$CopyDiskName.Length-10)
         }
 
     # check again if the disks exists with the same name
-    $checkIFAnotherCopyIsPresent = Get-AzDisk | ?{$_.Name -eq $NewDiskName}
+    $checkIFAnotherCopyIsPresent = Get-AzDisk | ?{$_.Name -eq $CopyDiskName}
     }until ($checkIFAnotherCopyIsPresent -eq $null)
 
     Write-Host ""
-    Write-Host "A copy of the disk with the name '$NewDiskName' will be created" -ForegroundColor yellow
+    Write-Host "A copy of the disk with the name '$CopyDiskName' will be created" -ForegroundColor yellow
 }
 
 
@@ -643,9 +638,9 @@ Write-Host ""
 write-host "Creating a managed disk in zone '$OsdiskZone' from snapshot of the OS disk of VM '$VmName'..."
 $NewOSDiskConfig = New-AzDiskConfig -AccountType $OsdiskType -Location $Location -Zone $OsdiskZone -CreateOption Copy -SourceResourceId $Snapshot.Id
 #create disk
-$newOSDisk=New-AzDisk -Disk $NewOSDiskConfig -ResourceGroupName $RescueVmRg -DiskName $NewDiskName | Out-Null
+$newOSDisk=New-AzDisk -Disk $NewOSDiskConfig -ResourceGroupName $RescueVmRg -DiskName $CopyDiskName | Out-Null
 Write-Host ""
-Write-Host "A copy of the disk with the name '$NewDiskName' was created in zone '$OsdiskZone' from snapshot of the OS disk of VM '$VmName'" -ForegroundColor green
+Write-Host "A copy of the disk with the name '$CopyDiskName' was created in zone '$OsdiskZone' from snapshot of the OS disk of VM '$VmName'" -ForegroundColor green
 }
 
 if ($OsdiskZone -eq $null)
@@ -654,9 +649,9 @@ Write-Host ""
 write-host "Creating a managed disk from snapshot of the OS disk of VM '$VmName'..."
 $NewOSDiskConfig = New-AzDiskConfig -AccountType $OsdiskType -Location $Location -CreateOption Copy -SourceResourceId $Snapshot.Id
 #create disk
-$newOSDisk=New-AzDisk -Disk $NewOSDiskConfig -ResourceGroupName $RescueVmRg -DiskName $NewDiskName | Out-Null
+$newOSDisk=New-AzDisk -Disk $NewOSDiskConfig -ResourceGroupName $RescueVmRg -DiskName $CopyDiskName | Out-Null
 Write-Host ""
-Write-Host "A copy of the disk with the name '$NewDiskName' was created from snapshot of the OS disk of VM '$VmName'" -ForegroundColor green
+Write-Host "A copy of the disk with the name '$CopyDiskName' was created from snapshot of the OS disk of VM '$VmName'" -ForegroundColor green
 }
 
 #Deleting the snapshot
@@ -667,7 +662,7 @@ Remove-AzSnapshot -ResourceGroupName $RescueVmRg -SnapshotName $snapshotName -Fo
 #Remove the encryption settings from the disk and attach it to the rescue vm using the PowerShell commands
 Write-Host ""
 Write-host "Removing encryption settings for the copy of the disk that was created"
-New-AzDiskUpdateConfig -EncryptionSettingsEnabled $false |Update-AzDisk -diskName $NewDiskName -ResourceGroupName $RescueVmRg | Out-Null
+New-AzDiskUpdateConfig -EncryptionSettingsEnabled $false |Update-AzDisk -diskName $CopyDiskName -ResourceGroupName $RescueVmRg | Out-Null
 
 
 #######################################
@@ -832,8 +827,7 @@ $RedHatDefaultPublisher = "Redhat"
 $RedHatDefaultOffer = "RHEL"
 $RedHatDefaultSku = "8.2"
 
-#
-
+#Suse
 $SuseDefaultPublisher = "SUSE"
 $SuseDefaultOffer = "sles-15-sp3"
 $SuseDefaultSku = "gen1"
@@ -1127,8 +1121,8 @@ $VirtualMachine = Set-AzVMBootDiagnostic -VM $VirtualMachine -Enable
 $VirtualMachine = Set-AzVMOSDisk -VM $VirtualMachine -StorageAccountType "Standard_LRS" -CreateOption FromImage 
 
 #Add existing data disk
-$datadisk = Get-AzDisk -ResourceGroupName $RescueVmRg -DiskName $NewDiskName
-Add-AzVMDataDisk -VM $VirtualMachine -ManagedDiskId $datadisk.Id -Name $NewDiskName -Caching None -DiskSizeInGB 128 -Lun 0 -CreateOption Attach | Out-Null
+$datadisk = Get-AzDisk -ResourceGroupName $RescueVmRg -DiskName $CopyDiskName
+Add-AzVMDataDisk -VM $VirtualMachine -ManagedDiskId $datadisk.Id -Name $CopyDiskName -Caching None -DiskSizeInGB 128 -Lun 0 -CreateOption Attach | Out-Null
 
 Write-Host ""
 Write-Host "Creating VM '$RescueVmName'..."
