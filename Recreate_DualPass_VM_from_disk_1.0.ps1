@@ -2464,6 +2464,10 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithKEK-eq
         # Invoke the command on the VM, using the local file
         Invoke-AzVMRunCommand -Name $VmName -ResourceGroupName $VMRgName -CommandId 'RunShellScript' -ScriptPath $PathScriptCreatingParameterFile | Out-Null
 
+        Write-Host ""
+        Write-Host "Removing unnecessary scripts used..."
+        Remove-Item -Path $PathScriptRemoveParameterFile
+        Remove-Item -Path $PathScriptCreatingParameterFile
         }
     }
 
