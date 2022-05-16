@@ -12,6 +12,9 @@
    [Parameter(Mandatory = $false)] [switch] $enablenested
   
 ) 
+# Keep alive Azure Cloud shell session for at least 20 minutes which is the default timeout period
+(' watch -n 10 keep_alive_session') > keepsessionalive.sh
+(./keepsessionalive.sh&) | Out-Null
 
 # Start to measure execution time of script
 $StartTimeMinute = (Get-Date).Minute
