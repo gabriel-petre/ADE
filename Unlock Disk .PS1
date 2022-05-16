@@ -1,6 +1,3 @@
-﻿# wiki for manual process of unlocking the disk: https://supportability.visualstudio.com/AzureVMPOD/_wiki/wikis/AzureVMPOD/266218/Azure_Virtual-Machine_Features_Disk-Encryption_HowTo_Unlock-an-encrypted-disk-V2
-
-
 
 <# 
 =======================================================================
