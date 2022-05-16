@@ -8,6 +8,14 @@
   
 ) 
 
+# Keep alive Azure Cloud shell session for at least 20 minutes which is the default timeout period
+(' watch -n 10 keep_alive_session') > keepsessionalive.sh
+(./keepsessionalive.sh&) | Out-Null
+
+# Start to measure execution time of script
+$StartTimeMinute = (Get-Date).Minute
+$StartTimeSecond = (Get-Date).Second
+
 Write-Host ""
 Write-Host "Please use a fresh opened page of Azure Cloud Shell before running the script, since Azure Cloud Shell has a timeout period of 20 minutes of inactivity." -ForegroundColor Yellow
 Write-Host "If Azure Cloud Shell times out while running the script, the script will stop at the time of the timeout." -ForegroundColor Yellow
@@ -36,10 +44,6 @@ $currentSubscription = (Get-AzContext).Subscription.Name
 Write-host ""
 Write-host "Subscription '$currentSubscription' was selected"
 
-
-# Start to measure execution time of script
-$StartTimeMinute = (Get-Date).Minute
-$StartTimeSecond = (Get-Date).Second
 
 #Write-Host "Disabling warning messages to users that the cmdlets used in this script may be changed in the future." -ForegroundColor Yellow
 Set-Item Env:\SuppressAzurePowerShellBreakingChangeWarnings "true"
