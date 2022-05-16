@@ -1,3 +1,6 @@
+# wiki for manual process of unlocking the disk: https://supportability.visualstudio.com/AzureVMPOD/_wiki/wikis/AzureVMPOD/266218/Azure_Virtual-Machine_Features_Disk-Encryption_HowTo_Unlock-an-encrypted-disk-V2
+
+
 
 <# 
 =======================================================================
@@ -1004,7 +1007,7 @@ If(!(test-path $path))
 
 #1. Disk is Managed:
 
-if($vm.StorageProfile.OsDisk.Vhd -eq $null) #if this is null, then the disk is Managed
+if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed
 {
 write-host "VM is using Managed disks"
 write-host ""
@@ -1080,7 +1083,7 @@ Exit
 
 #2. Disk is Unmanaged:
 
-elseif($vm.StorageProfile.OsDisk.Vhd -ne $null) #if this is NOT null, then the disk is Unmanaged
+if($null -ne $vm.StorageProfile.OsDisk.Vhd) #if this is NOT null, then the disk is Unmanaged
 {
 write-host "VM is using Unmanaged disks"
 write-host ""
