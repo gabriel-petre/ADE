@@ -1125,7 +1125,8 @@ $VirtualMachine = Set-AzVMOSDisk -VM $VirtualMachine -StorageAccountType "Standa
 
 #Add existing data disk
 $datadisk = Get-AzDisk -ResourceGroupName $RescueVmRg -DiskName $CopyDiskName
-Add-AzVMDataDisk -VM $VirtualMachine -ManagedDiskId $datadisk.Id -Name $CopyDiskName -Caching None -DiskSizeInGB 128 -Lun 0 -CreateOption Attach | Out-Null
+$DiskSizeInGB = $datadisk.DiskSizeGB
+Add-AzVMDataDisk -VM $VirtualMachine -ManagedDiskId $datadisk.Id -Name $CopyDiskName -Caching None -DiskSizeInGB $DiskSizeInGB -Lun 0 -CreateOption Attach | Out-Null
 
 Write-Host ""
 Write-Host "Creating VM '$RescueVmName'..."
