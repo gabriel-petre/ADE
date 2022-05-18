@@ -75,7 +75,8 @@ if ($error)
 }
 $error.clear()
 
-
+if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed
+{
 # Get Keyvault Name from secret URL
 $vm = Get-AzVm -ResourceGroupName $VMRgName -Name $vmName
 $OSDiskName = $vm.StorageProfile.OsDisk.Name 
@@ -83,6 +84,14 @@ $OSDisk = Get-AzDisk | ?{($_.ManagedBy -eq $vm.id) -and ($_.name -eq $OSDiskName
 $secretUrl = $OSDisk.EncryptionSettingsCollection.EncryptionSettings.DiskEncryptionKey.SecretUrl
 $secretUri = [System.Uri] $secretUrl;
 $keyVaultName = $secretUri.Host.Split('.')[0];
+}
+
+if($null -ne $vm.StorageProfile.OsDisk.Vhd) #if this is NOT null, then the disk is Unmanaged
+{
+$secretUrl = $VM.StorageProfile.OsDisk.EncryptionSettings.DiskEncryptionKey.SecretUrl
+$secretUri = [System.Uri] $secretUrl;
+$keyVaultName = $secretUri.Host.Split('.')[0];
+}
 
 
 ######################################################
@@ -504,6 +513,10 @@ Catch{
     Write-Host "Resource group '$RescueVmRg' already exist and will be used for storing dependencies for the Rescue VM."
     }
 
+if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed
+{
+Write-Host ""
+Write-Host "VM '$VmName' has managed disks" -ForegroundColor Green
 #Create snapshot of the OS disk
 Write-Host ""
 write-host "Creating snapshot of the OS disk of VM '$VmName'..."
@@ -583,6 +596,7 @@ $Snapshot = Get-AzSnapshot -SnapshotName $snapshotName -ResourceGroupName $Rescu
 
 # Name of the copy of the disk
 
+
 # check IF Another Copy fo the disk with the same name already exists
 $checkIFAnotherCopyIsPresent = Get-AzDisk | ?{$_.Name -eq $CopyDiskName} 
 
@@ -604,7 +618,7 @@ $CopyDiskNameLength = $CopyDiskName.Length
     Write-Host "A copy of the disk with the name '$CopyDiskName' will be created" -ForegroundColor yellow
 }
 
-if ($checkIFAnotherCopyIsPresent -ne $null) #if a disk with the same name already exists, add an increment of $i to name of thi disk
+if ($checkIFAnotherCopyIsPresent -ne $null) #if a disk with the same name already exists, ask for a new name
 
 {
     do{
@@ -666,6 +680,102 @@ Remove-AzSnapshot -ResourceGroupName $RescueVmRg -SnapshotName $snapshotName -Fo
 Write-Host ""
 Write-host "Removing encryption settings for the copy of the disk that was created"
 New-AzDiskUpdateConfig -EncryptionSettingsEnabled $false |Update-AzDisk -diskName $CopyDiskName -ResourceGroupName $RescueVmRg | Out-Null
+}
+
+if($null -ne $vm.StorageProfile.OsDisk.Vhd) #if this is NOT null, then the disk is Unmanaged
+{
+
+Write-Host ""
+Write-Host "VM '$VmName' has unmanaged disks" -ForegroundColor Green
+############################ Create a copy of the unmanaged disk into the same storage account##########################################
+
+####################################################
+#   Get Impacted VM's Storage Account information  #
+####################################################
+
+# get OS disk Storage Account Name (source storage account)
+$vhdUri = $VM.StorageProfile.OsDisk.Vhd.uri
+$StorageAccountName = $vhdUri.Split('/')[2]
+$StorageAccountName  = $StorageAccountName.Split('.')[0]
+
+# get OS disk Storage Account Resource group Name (source storage account)
+$StorageAccountResourceGroupName = (Get-AzStorageAccount | ?{$_.StorageAccountName -eq $StorageAccountName}).ResourceGroupName
+
+# get OS disk Storage Account Container Name (source storage account)
+$Container = $vhdUri.Split('/')[3]
+
+# get OS disk blob name
+$OriginalOSblobName = $vhdUri.Split('/')[4]
+$CopyDiskblobName = $CopyDiskName
+
+# Storage Account Keys
+$StorageKey = Get-AzStorageAccountKey -Name $StorageAccountName -ResourceGroupName $StorageAccountResourceGroupName 
+
+# Storage Account Context
+$Context = New-AzStorageContext -StorageAccountName $StorageAccountName -StorageAccountKey $StorageKey.Value[0]
+
+$blobs = Get-AzStorageBlob -Container $container -Context $context
+#Fetch all the Page blobs with extension .vhd as only Page blobs can be attached as disk to Azure VMs
+
+# check if the blob name ends with .vhd. If no, add .vhd at the end
+if ($CopyDiskblobName.EndsWith('.vhd') -eq $false)
+{$CopyDiskblobName = $CopyDiskblobName + '.vhd'}
+
+
+# check IF Another Copy fo the disk with the same name already exists
+$checkIFAnotherCopyIsPresent = $blobs | Where-Object {$_.BlobType -eq 'PageBlob' -and $_.Name -eq $CopyDiskblobName}
+
+if ($checkIFAnotherCopyIsPresent -ne $null) #if a disk with the same name already exists, ask for a new name
+
+{
+    do{
+    # check if a disk with the same name already exists
+    Write-Host ""
+    Write-Host "A disk with the same name '$CopyDiskblobName' already exists!" -ForegroundColor Yellow
+    Write-Host ""
+    $CopyDiskblobName = Read-Host "Enter a different name for the copy of the disk"
+
+    # check if the blob name ends with .vhd. If no, add .vhd at the end
+    if ($CopyDiskblobName.EndsWith('.vhd') -eq $false)
+    {$CopyDiskblobName = $CopyDiskblobName + '.vhd'}
+
+    # check again if the disks exists with the same name
+    $checkIFAnotherCopyIsPresent = $blobs | Where-Object {$_.BlobType -eq 'PageBlob' -and $_.Name -eq $CopyDiskblobName}
+    
+    }until ($checkIFAnotherCopyIsPresent -eq $null)
+}
+#Start the copy process
+Write-Host ""
+Write-Host "Creating a copy of the OS disk..."
+
+
+
+$copyOperation = Start-AzStorageBlobCopy -SrcBlob $OriginalOSblobName -SrcContainer $Container -Context $Context -DestBlob $CopyDiskblobName -DestContainer $Container -DestContext $Context | Out-Null
+$copyOperation | Get-AzStorageBlobCopyState -WaitForComplete | Out-Null
+
+Write-Host ""
+Write-Host "A copy of the OS disk with name '$CopyDiskblobName' was created successfully in '$Container' container in storage account '$StorageAccountName'!" -ForegroundColor Green
+
+
+# Create a new container for the rescue VM to store its OS disk .vhd
+$RescueVMContainer = "rescuevm"
+
+$containerExists = Get-AzStorageContainer -Context $Context -Name $RescueVMContainer -ErrorAction SilentlyContinue
+
+if ($containerExists -eq $null)
+{
+Write-Host ""
+Write-Host "Creating container '$RescueVMContainer' in storage account '$StorageAccountName' where the rescue VM '$RescueVmName' will store the OS disk..."
+New-AzStorageContainer -Name $RescueVMContainer -Context $Context | Out-Null
+}
+
+if ($containerExists -ne $null)
+{
+Write-Host ""
+Write-Host "Container '$RescueVMContainer' already exists in storage account '$StorageAccountName' and will be used to store the OS disk of VM '$RescueVmName'"
+}
+
+}
 
 
 #######################################
@@ -880,7 +990,7 @@ function DefaultMenu
      {
            '1' {Write-host "You chose option #1. VM '$RescueVmName' will be created from generation 1 Ubuntu default image (Ubuntu 18.04-LTS - latest_version)" -ForegroundColor green}
            '2' {Write-host "You chose option #2. VM '$RescueVmName' will be created from generation 1 RedHat default image (RedHat 8.2 - latest_version)" -ForegroundColor green}
-           '3' {Write-host "You chose option #3. VM '$RescueVmName' will be created from generation 1 Suse default image (Suse 15.3 SP3' - latest_version)" -ForegroundColor green}
+           '3' {Write-host "You chose option #3. VM '$RescueVmName' will be created from generation 1 Suse default image (Suse 15.3 SP3 - latest_version)" -ForegroundColor green}
            '4' {Write-host "You chose option #4. VM '$RescueVmName' will be created from generation 1 CentOS default image (CentOS 8.2 - latest_version)" -ForegroundColor green}
      }
 
@@ -947,7 +1057,7 @@ function DefaultOsOrMenu
     Write-Host ""
     Write-Host "2: Create VM '$RescueVmName' from generation 1 RedHat default image (RedHat 8.2 -latest_version)"
     Write-Host ""
-    Write-Host "3: Create VM '$RescueVmName' from generation 1 Suse default image (Suse 15.3 SP3' - latest_version)"
+    Write-Host "3: Create VM '$RescueVmName' from generation 1 Suse default image (Suse 15.3 SP3 - latest_version)"
     Write-Host ""
     Write-Host "4: Create VM '$RescueVmName' from generation 1 CentOS default image (CentOS 8.2 - latest_version)"
     Write-Host ""
@@ -969,7 +1079,7 @@ function DefaultOsOrMenu
      {
            '1' {Write-host "You chose option #1. VM '$RescueVmName' will be created from generation 1 Ubuntu default image (Ubuntu 18.04-LTS - latest_version)" -ForegroundColor green}
            '2' {Write-host "You chose option #2. VM '$RescueVmName' will be created from generation 1 RedHat default image (RedHat 8.2 -latest_version)" -ForegroundColor green}
-           '3' {Write-host "You chose option #3. VM '$RescueVmName' will be created from generation 1 Suse default image (Suse 15.3 SP3' - latest_version)" -ForegroundColor green}
+           '3' {Write-host "You chose option #3. VM '$RescueVmName' will be created from generation 1 Suse default image (Suse 15.3 SP3 - latest_version)" -ForegroundColor green}
            '4' {Write-host "You chose option #4. VM '$RescueVmName' will be created from generation 1 CentOS default image (CentOS 8.2 - latest_version)" -ForegroundColor green}
            '5' {Write-host "You chose option #5. Enter menu to select a different SKU from the same Publisher\Offer as VM '$VmName' which is '$BrokenVMPublisher\$BrokenVMOffer\$ExactVersion'" -ForegroundColor green}
      }
@@ -1117,6 +1227,12 @@ $nic = New-AzNetworkInterface -Name $nicName -ResourceGroupName $nicRGName -Loca
 #Add NIC to vmconfig
 $VirtualMachine = Add-AzVMNetworkInterface -VM $VirtualMachine -Id $nic.Id
 
+# For Managed disks
+if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed
+{
+Write-Host ""
+Write-Host "Creating VM '$RescueVmName' with managed disks..."
+
 #Enabling boot diagnostics
 $VirtualMachine = Set-AzVMBootDiagnostic -VM $VirtualMachine -Enable
 
@@ -1127,9 +1243,28 @@ $VirtualMachine = Set-AzVMOSDisk -VM $VirtualMachine -StorageAccountType "Standa
 $datadisk = Get-AzDisk -ResourceGroupName $RescueVmRg -DiskName $CopyDiskName
 $DiskSizeInGB = $datadisk.DiskSizeGB
 Add-AzVMDataDisk -VM $VirtualMachine -ManagedDiskId $datadisk.Id -Name $CopyDiskName -Caching None -DiskSizeInGB $DiskSizeInGB -Lun 0 -CreateOption Attach | Out-Null
+}
 
+# For UnManaged disks
+if($null -ne $vm.StorageProfile.OsDisk.Vhd) #if this is NOT null, then the disk is Unmanaged
+{
 Write-Host ""
-Write-Host "Creating VM '$RescueVmName'..."
+Write-Host "Creating VM '$RescueVmName' with unmanaged disks..."
+
+$RandomNumber = Get-Random -Maximum 10000000000000000
+$OSDiskName = $RescueVmName + '_OS_disk_' + $RandomNumber
+
+###### get copy disk URI #####
+$CopyDiskURI = "https://" + "$StorageAccountName" + '.blob.core.windows.net/' + "$Container" + '/' + "$CopyDiskblobName"
+
+# add copy of the original OS disk as a data this to the rescue VM
+$VirtualMachine = Add-AzVMDataDisk -VM $VirtualMachine -Name $CopyDiskblobName -VhdUri $CopyDiskURI -Lun 0 -CreateOption attach
+
+# Rescue VM OS Disk setup
+$STA = Get-AzStorageAccount -ResourceGroupName $StorageAccountResourceGroupName -Name $StorageAccountName
+$OSDiskUri = $STA.PrimaryEndpoints.Blob.ToString() + "$RescueVMContainer" + '/' + $OSDiskName + ".vhd"
+$VirtualMachine = Set-AzVMOSDisk -VM $VirtualMachine -Name $OSDiskName -VhdUri $OSDiskUri -CreateOption fromImage 
+}
  
  if ($WindowsOrLinux -eq "Windows")
 {
@@ -1164,6 +1299,7 @@ $RescueVMObject.StorageProfile.OsDisk.EncryptionSettings = $vm.StorageProfile.Os
 Write-Host ""
 Write-Host "Updating and restarting Rescue VM '$RescueVmName'..."   
 $RescueVMObject| Update-AzVM | Out-Null # the update operation will restart VM
+
 
 #Wait until VM guest agent becomes ready
 do {
