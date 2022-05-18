@@ -1,10 +1,12 @@
  Param (
 
-   [Parameter(Mandatory = $true)] [String] $VmName,
-   [Parameter(Mandatory = $true)] [String] $VMRgName,
-   [Parameter(Mandatory = $true)] [String] $OSDiskName,
-   [Parameter(Mandatory = $true)] [String] $OSDiskRg,
-   [Parameter(Mandatory = $true)] [String] $SubscriptionID
+   [Parameter(Mandatory = $true)] [String]  $VmName,
+   [Parameter(Mandatory = $true)] [String]  $VMRgName,
+   [Parameter(Mandatory = $true)] [String]  $OSDiskName,
+   [Parameter(Mandatory = $false)] [String] $OSDiskRg,
+   [Parameter(Mandatory = $false)] [String] $NewOSDiskStorageAccountName,
+   [Parameter(Mandatory = $false)] [String] $NewOSDiskContainer,
+   [Parameter(Mandatory = $true)] [String]  $SubscriptionID
   
 ) 
 
@@ -48,6 +50,193 @@ Write-host "Subscription '$currentSubscription' was selected"
 #Write-Host "Disabling warning messages to users that the cmdlets used in this script may be changed in the future." -ForegroundColor Yellow
 Set-Item Env:\SuppressAzurePowerShellBreakingChangeWarnings "true"
 
+###############################
+#      Parameters used cheks  #
+###############################
+
+# For Managed disks
+
+
+$vm = Get-AzVM -ResourceGroupName $VMRgName -Name $VmName
+
+if(($null -eq $vm.StorageProfile.OsDisk.Vhd) -and (!$OSDiskRg)) #if this is null, then the disk is Managed
+{
+Write-Host ""
+Write-Host "Vm '$VmName' has managed disks and OS disk resource group is needed in this process" -ForegroundColor Yellow
+Write-Host ""
+$OSDiskRg = Read-Host "Enter the resource group name of the disk which will be the OS disk"
+}
+
+# For Unmanaged disks
+if(($null -ne $vm.StorageProfile.OsDisk.Vhd) -and (!$NewOSDiskStorageAccountName)) #if this is null, then the disk is UnManaged
+{
+Write-Host ""
+Write-Host "Vm '$VmName' has unmanaged disks and storage account where new OS disk is stored is needed in this process" -ForegroundColor Yellow
+Write-Host ""
+$NewOSDiskStorageAccountName = Read-Host "Enter the storage account name of the disk which will be the OS disk"
+}
+
+# For Unmanaged disks
+if(($null -ne $vm.StorageProfile.OsDisk.Vhd) -and (!$NewOSDiskContainer))#if this is null, then the disk is UnManaged
+{
+Write-Host ""
+Write-Host "Vm '$VmName' has unmanaged disks and the container where the new OS disk is stored inside the storage accoount is needed in this process" -ForegroundColor Yellow
+Write-Host ""
+$NewOSDiskContainer = Read-Host "Enter the container name where the disk which will be the OS disk is stored"
+}
+
+##########################################
+#          Unmanaged disk variables       #
+##########################################
+
+if($null -ne $vm.StorageProfile.OsDisk.Vhd) #if this is NOT null, then the disk is UnManaged
+{
+Write-Host ""
+Write-Host "Vm is using Unmanaged disks" -ForegroundColor Green
+Write-Host ""
+# Get Disk details about the disk that was specified which will be the new OS disk of the specified VM ('NewOSDisk'). Also check if exists
+Try { 
+        # get OS disk Storage Account Resource group Name (source storage account)
+        $StorageAccountResourceGroupName = (Get-AzStorageAccount | ?{$_.StorageAccountName -eq $NewOSDiskStorageAccountName}).ResourceGroupName
+        # Storage Account Keys
+        $StorageKey = Get-AzStorageAccountKey -Name $NewOSDiskStorageAccountName -ResourceGroupName $StorageAccountResourceGroupName 
+
+        # Storage Account Context
+        $Context = New-AzStorageContext -StorageAccountName $NewOSDiskStorageAccountName -StorageAccountKey $StorageKey.Value[0]
+        $blobs = Get-AzStorageBlob -Container $NewOSDiskContainer -Context $context
+        $NewOSBlobName = $OSDiskName
+
+        $TestIfDiskExists = $blobs | Where-Object {$_.BlobType -eq 'PageBlob' -and $_.Name -eq $NewOSBlobName}
+        }
+
+            catch {}
+
+            if ($TestIfDiskExists -eq $null)
+             {
+             Write-Host "Disk '$NewOSBlobName' was not found" -ForegroundColor Yellow
+             Write-Host ""
+             
+            $NewOSBlobName = $NewOSBlobName + '.vhd'
+            Write-Host "Searching for disk '$NewOSBlobName'"
+            Write-Host ""
+            }
+
+        try{
+         # get OS disk Storage Account Resource group Name (source storage account)
+        $StorageAccountResourceGroupName = (Get-AzStorageAccount | ?{$_.StorageAccountName -eq $NewOSDiskStorageAccountName}).ResourceGroupName
+        # Storage Account Keys
+        $StorageKey = Get-AzStorageAccountKey -Name $NewOSDiskStorageAccountName -ResourceGroupName $StorageAccountResourceGroupName 
+
+        # Storage Account Context
+        $Context = New-AzStorageContext -StorageAccountName $NewOSDiskStorageAccountName -StorageAccountKey $StorageKey.Value[0]
+        $blobs = Get-AzStorageBlob -Container $NewOSDiskContainer -Context $context
+        $TestIfDiskExists = $blobs | Where-Object {$_.BlobType -eq 'PageBlob' -and $_.Name -eq $NewOSBlobName}
+        }
+        
+        catch {}
+        if ($TestIfDiskExists -eq $null) # Checking of the disks exist. If ye continue, if no, stop
+        {
+        Write-Host ""
+        Write-Host "Disk '$NewOSBlobName' was not found in storage account '$NewOSDiskStorageAccountName' container '$NewOSDiskContainer'" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
+        Write-Host "Script will stop in 10 seconds"
+        Start-Sleep 10
+        Exit
+        }
+          if ($TestIfDiskExists -ne $null)
+          {
+
+             Write-Host "Disk '$NewOSBlobName' was found" -ForegroundColor green
+  
+          }
+
+        #get disk name from disk Metadata
+        $NewOsDiskNameFromMetadata = $TestIfDiskExists.ICloudBlob.Metadata.MicrosoftAzureCompute_DiskName
+        $NewOSDiskURI = $TestIfDiskExists.ICloudBlob.Uri.AbsoluteUri
+        $VmNameWhereDiskIsAttached = $TestIfDiskExists.ICloudBlob.Metadata.MicrosoftAzureCompute_VMName
+
+if ($VmNameWhereDiskIsAttached -ne $null)
+{
+
+Write-Host ""
+Write-Host "Details about the specified disk:" -ForegroundColor Green
+Write-Host ""
+Write-Host "Disk Name: $NewOsDiskNameFromMetadata"
+Write-Host "Disk Blob Name:  $NewOSBlobName"
+Write-Host "Disk URI: $NewOSDiskURI"
+Write-Host "Storage account name: $NewOSDiskStorageAccountName"
+Write-Host "Storage account resource group: $StorageAccountResourceGroupName"
+Write-Host "Container: $NewOSDiskContainer"  
+Write-Host "Disk is used by VM: $VmNameWhereDiskIsAttached" -ForegroundColor Yellow
+}
+
+if ($VmNameWhereDiskIsAttached -eq $null)
+{
+
+Write-Host ""
+Write-Host "Details about the specified disk:" -ForegroundColor Green
+Write-Host ""
+Write-Host "Disk Name: Disk object does not exist and does not have a name since it is not attached to a VM."
+Write-Host "Disk Blob Name:  $NewOSBlobName"
+Write-Host "Disk URI: $NewOSDiskURI"
+Write-Host "Storage account name: $NewOSDiskStorageAccountName"
+Write-Host "Storage account resource group: $StorageAccountResourceGroupName"
+Write-Host "Container: $NewOSDiskContainer"  
+Write-Host "Disk is used by VM: Disk is not used by any VM" -ForegroundColor Green
+}
+
+
+# Get Disk details about the curent OS disk of the specified VM ('NewOSDisk')
+
+$VM = Get-AzVM -ResourceGroupName $VMRgName -Name $VmName
+
+# get OS disk Storage Account Name (source storage account)
+$CurrentOSDiskvhdUri = $VM.StorageProfile.OsDisk.Vhd.uri
+$CurrentOSDiskStorageAccountName = $CurrentOSDiskvhdUri.Split('/')[2]
+$CurrentOSDiskStorageAccountName  = $CurrentOSDiskStorageAccountName.Split('.')[0]
+
+# get OS disk Storage Account Resource group Name (source storage account)
+$CurrentOSDiskStorageAccountResourceGroupName = (Get-AzStorageAccount | ?{$_.StorageAccountName -eq $CurrentOSDiskStorageAccountName}).ResourceGroupName
+
+# get OS disk Storage Account Container Name (source storage account)
+$CurrentOSDiskContainer = $CurrentOSDiskvhdUri.Split('/')[3]
+
+# get OS disk blob name
+$CurrentOSDiskBlobName = $CurrentOSDiskvhdUri.Split('/')[4]
+#$CopyDiskblobName = $OSDiskName + '.vhd'
+
+# Storage Account Keys
+$StorageKey = Get-AzStorageAccountKey -Name $CurrentOSDiskStorageAccountName -ResourceGroupName $CurrentOSDiskStorageAccountResourceGroupName 
+
+# Storage Account Context
+$CurrentOSContext = New-AzStorageContext -StorageAccountName $CurrentOSDiskStorageAccountName -StorageAccountKey $StorageKey.Value[0]
+
+$blobs2 = Get-AzStorageBlob -Container $CurrentOSDiskContainer -Context $context
+#Fetch all the Page blobs with extension .vhd as only Page blobs can be attached as disk to Azure VMs
+
+$OsDiskCheck = $blobs2 | Where-Object {$_.BlobType -eq 'PageBlob' -and $_.Name -eq $CurrentOSDiskBlobName}
+
+
+#get disk name from disk Metadata
+$CurrentOsDiskNameFromMetadata = $OsDiskCheck.ICloudBlob.Metadata.MicrosoftAzureCompute_DiskName
+
+Write-Host ""
+Write-Host "Details about current OS disk of VM '$VmName':" -ForegroundColor Green
+Write-Host ""
+Write-Host "Disk Name: $CurrentOsDiskNameFromMetadata"
+Write-Host "Disk Blob Name:  $CurrentOSDiskBlobName"
+Write-Host "Disk URI: $CurrentOSDiskvhdUri"
+Write-Host "Storage account name: $CurrentOSDiskStorageAccountName"
+Write-Host "Storage account resource group: $CurrentOSDiskStorageAccountResourceGroupName"
+Write-Host "Container: $CurrentOSDiskContainer"  
+
+
+}
+
+###############################
 Write-host ""
 $VmExistsOrDelete = Read-Host "Vm exists (E) or was deleted (D)?"
 
@@ -71,6 +260,10 @@ if ($HavePreviousVMConfig -ne "S") # Testing if the specified disk exists and if
     $error.clear()
 
         #Test if specified disks exists
+
+        if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed.
+
+        {
         Try { $TestIfDiskExists = Get-AzDisk | ?{$_.Name -eq $OSDiskName} }
 
         catch {}
@@ -88,6 +281,17 @@ if ($HavePreviousVMConfig -ne "S") # Testing if the specified disk exists and if
         Write-Host "Script will exit"
         Exit
         }
+        }
+
+        if($null -ne $vm.StorageProfile.OsDisk.Vhd) #if this is not null, then the disk is unManaged.
+
+        {
+        # The operation of checking if the disks exists was done previously for the unmanaged disk
+        }
+        
+
+}
+        
 
         # Select an exiting configuration files
         $TempName = "VM_" + "$VmName" + "_Settings"
@@ -133,15 +337,12 @@ if ($HavePreviousVMConfig -ne "S") # Testing if the specified disk exists and if
         Write-Host "Selected VM Configuration JSON File is: $NameOfExistingJson" -ForegroundColor Green
         $Path_JSON_Vm_Settings = "$HOME/" + "$NameOfExistingJson"
         $json_fullpath = $Path_JSON_Vm_Settings 
-    }
-}
+ }
+
 
 if ($VmExistsOrDelete -eq "E") # Vm exists and main script will run
 
 {
-
-Write-host ""
-Write-host "VM '$VmName' will be deleted and recreated in resource group '$VMRgName' from the specified disk with name '$OSDiskName' from resource group '$OSDiskRg' and at the end will be encrypted again with Dual Pass with same encryption settings" -ForegroundColor Green
 
 ##############################################################################
 #          Testing if VM and specified disk exist and Get VM object          #
@@ -169,24 +370,40 @@ Exit
 }
 $error.clear()
 
-#Test if specified disks exists
-Try { $TestIfDiskExists = Get-AzDisk | ?{$_.Name -eq $OSDiskName} -ErrorAction SilentlyContinue }
+        #Test if specified disks exists
 
-catch {}
+        if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed.
+        {
+        Write-host ""
+        Write-host "VM '$VmName' will be deleted and recreated in resource group '$VMRgName' from the specified disk with name '$OSDiskName' from resource group '$OSDiskRg' and at the end will be encrypted again with Dual Pass with same encryption settings" -ForegroundColor Green
 
-if ($TestIfDiskExists -eq $null)
-{
-Write-Host ""
-Write-Host "Disk '$OSDiskName' was not found in resource group '$VMRgName'" -ForegroundColor Red
-Write-Host ""
-Write-Host ""
-Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
-Write-Host ""
-Stop-Transcript | Out-Null
-Write-host 
-Write-Host "Script will exit"
-Exit
+        Try { $TestIfDiskExists = Get-AzDisk | ?{$_.Name -eq $OSDiskName} }
+
+        catch {}
+
+        if ($TestIfDiskExists -eq $null)
+        {
+        Write-Host ""
+        Write-Host "Disk '$OSDiskName' was not found in resource group '$VMRgName'" -ForegroundColor Red
+        Write-Host ""
+        Write-Host ""
+        Write-Host "Log file '$HOME/RecreateScript_Execution_log.txt' was successfully saved"
+        Write-Host ""
+        Stop-Transcript | Out-Null
+        Write-host 
+        Write-Host "Script will exit"
+        Exit
+        }
+        }
+
+        if($null -ne $vm.StorageProfile.OsDisk.Vhd) #if this is not null, then the disk is unManaged.
+        {
+        # The operation of checking if the disks exists was done previously for the unmanaged disk
+        }
+
+
 }
+
 
 #######################################################
 #            Exporting VM config to JSON              #
@@ -302,7 +519,7 @@ function ExportVMConfigurationMenu
        exit
        }
 
-}
+
 ##################################################################
 #   Import JSON file into $import variable  and get AAD App ID   #
 ##################################################################
@@ -391,6 +608,9 @@ if ($provisioningState -ne "PowerState/deallocated")
 #       Creating a copy of this disk for backup purposes         #
 ##################################################################
 
+# For Managed disks
+if($null -eq $import.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed
+{
 # creating variable for $NewDiskName and $snapshotName
 
 # Starting number for the copy
@@ -495,7 +715,7 @@ $NewDiskNameLength = $NewDiskName.Length
     }
 
     Write-Host ""
-    Write-Host "A copy of the disk with the name '$NewDiskName' will be created" -ForegroundColor yellow
+    Write-Host "A copy of the managed disk with the name '$NewDiskName' will be created" -ForegroundColor yellow
 }
 
 if ($checkIFAnotherCopyIsPresent -ne $null) #if a disk with the same name already exists, add an increment of $i to name of thi disk
@@ -504,7 +724,7 @@ if ($checkIFAnotherCopyIsPresent -ne $null) #if a disk with the same name alread
     do{
     # check if a disk with the same name already exists
     Write-Host ""
-    Write-Host "A disk with the same name '$NewDiskName' already exists. Searching for an available name..." -ForegroundColor Yellow
+    Write-Host "A managed disk with the same name '$NewDiskName' already exists. Searching for an available name..." -ForegroundColor Yellow
     $i++
 
     #Create the names of the disk
@@ -522,7 +742,7 @@ if ($checkIFAnotherCopyIsPresent -ne $null) #if a disk with the same name alread
     }until ($checkIFAnotherCopyIsPresent -eq $null)
 
     Write-Host ""
-    Write-Host "A copy of the disk with the name '$NewDiskName' will be created" -ForegroundColor yellow
+    Write-Host "A copy of the managed disk with the name '$NewDiskName' will be created" -ForegroundColor yellow
 }
 
 
@@ -536,7 +756,7 @@ if ($DiskZone -ne $null)
     #create disk
     $newOSDisk=New-AzDisk -Disk $NewOSDiskConfig -ResourceGroupName $OSDiskRg -DiskName $NewDiskName | Out-Null
     Write-Host ""
-    Write-Host "A copy of the disk was created in resource group '$OSDiskRg', in zone '$DiskZone' with name '$NewDiskName'" -ForegroundColor green
+    Write-Host "A copy of the managed disk was created in resource group '$OSDiskRg', in zone '$DiskZone' with name '$NewDiskName'" -ForegroundColor green
 }
 
 if ($DiskZone -eq $null)
@@ -545,14 +765,76 @@ if ($DiskZone -eq $null)
     #create disk
     $newOSDisk=New-AzDisk -Disk $NewOSDiskConfig -ResourceGroupName $OSDiskRg -DiskName $NewDiskName | Out-Null
     Write-Host ""
-    Write-Host "A copy of the disk was created in resource group '$OSDiskRg' with name '$NewDiskName'" -ForegroundColor green
+    Write-Host "A copy of the managed disk was created in resource group '$OSDiskRg' with name '$NewDiskName'" -ForegroundColor green
 }
 
 #Deleting the snapshot
 Write-Host ""
 write-host "Deleting unnecessary snapshots created earlier..."
 Remove-AzSnapshot -ResourceGroupName $OSDiskRg -SnapshotName $snapshotName -Force | Out-Null
+}
 
+# Create an UnManaged disk copy
+if($null -ne $import.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Unmanaged
+{
+
+# Starting number for the copy
+$i = 1 
+
+# Name of the copy of the disk
+$DiskCopyBlobName = ('copy_' + $i + '_'+ $CurrentOSDiskBlobName)
+$DiskCopyBlobNameLength = $DiskCopyBlobName.Length
+
+    If ($DiskCopyBlobNameLength -gt "50")
+    {
+    $DiskCopyBlobName = $DiskCopyBlobName.Substring(0,$DiskCopyBlobName.Length-10)
+    }
+
+# check IF Another Copy fo the disk with the same name already exists
+$checkIFAnotherCopyIsPresent = $blobs | Where-Object {$_.BlobType -eq 'PageBlob' -and $_.Name -eq $DiskCopyBlobName}
+
+
+if ($checkIFAnotherCopyIsPresent -ne $null) #if a disk with the same name already exists
+
+{
+    do{
+    # check if a disk with the same name already exists
+    Write-Host ""
+    Write-Host "An unmanaged disk with the same name '$DiskCopyBlobName' already exists. Searching for an available name..." -ForegroundColor Yellow
+    $i++
+
+    #Create the names of the disk
+    $DiskCopyBlobName = ('copy_' + $i + '_'+ $CurrentOSDiskBlobName)
+
+    # reduce the name of the Disk
+    $DiskCopyBlobNameLength = $DiskCopyBlobName.Length
+    If ($DiskCopyBlobNameLength -gt "50")
+        {
+        $DiskCopyBlobName = $DiskCopyBlobName.Substring(0,$DiskCopyBlobName.Length-10)
+        }
+
+    # check again if the disks exists with the same name
+    $checkIFAnotherCopyIsPresent = $blobs | Where-Object {$_.BlobType -eq 'PageBlob' -and $_.Name -eq $DiskCopyBlobName}
+    }until ($checkIFAnotherCopyIsPresent -eq $null)
+
+}
+
+if ($checkIFAnotherCopyIsPresent -eq $null) #if a disk with the same name already exists
+
+{
+    Write-Host ""
+    Write-Host "A copy of the unmanaged disk with the name '$DiskCopyBlobName' will be created" -ForegroundColor yellow
+}
+#Start the copy process
+Write-Host ""
+Write-Host "Creating a copy of the OS disk..."
+$copyOperation = Start-AzStorageBlobCopy -SrcBlob $CurrentOSDiskBlobName -SrcContainer $CurrentOSDiskContainer -Context $CurrentOSContext -DestBlob $DiskCopyBlobName -DestContainer $CurrentOSDiskContainer -DestContext $CurrentOSContext | Out-Null
+$copyOperation | Get-AzStorageBlobCopyState -WaitForComplete | Out-Null
+
+Write-Host ""
+Write-Host "A copy of the unmanaged OS disk with name '$DiskCopyBlobName' was created successfully in '$CurrentOSDiskContainer' container in storage account '$CurrentOSDiskStorageAccountName'!" -ForegroundColor Green
+
+}
 
 ##############################################################
 #            Check if disk is attached to a VM or not        #
@@ -561,13 +843,11 @@ Remove-AzSnapshot -ResourceGroupName $OSDiskRg -SnapshotName $snapshotName -Forc
 Write-Host ""
 Write-Host "Checking if the disk is attached to a VM"
 
-#check if disk is attached to a vm
-$DiskAttachedToVM = (Get-AzDisk -ResourceGroupName $OSDiskRg -DiskName $OSDiskName).ManagedBy
-
-if ($DiskAttachedToVM -ne $null) # if 'ManagedBy' property is not $null, means disk is attached to Vm from 'ManagedBy' property
+if($null -eq $import.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed
 {
 
-
+#check if disk is attached to a vm
+$DiskAttachedToVM = (Get-AzDisk -ResourceGroupName $OSDiskRg -DiskName $OSDiskName).ManagedBy
 $VmNameWhereDiskIsAttached = $DiskAttachedToVM.Split("/")
 $VmNameWhereDiskIsAttached = $VmNameWhereDiskIsAttached[8]
 
@@ -576,6 +856,30 @@ Write-Host "Disk '$OSDiskName' is attached to VM '$VmNameWhereDiskIsAttached'" -
 
 $VmWhereDiskIsAttachedObject = Get-AzVM | ?{$_.Name -eq $VmNameWhereDiskIsAttached}
 $OSDiskOfFoundVM = $VmWhereDiskIsAttachedObject.StorageProfile.OsDisk.Name
+
+}
+
+# For UnManaged disks
+if($null -ne $import.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Unmanaged
+{
+
+if($TestIfDiskExists.ICloudBlob.Properties.LeaseStatus -ne 'Unlocked')
+{
+$DiskAttachedToVM = $VmNameWhereDiskIsAttached
+
+Write-Host ""
+Write-Host "Disk with name '$NewOsDiskNameFromMetadata' and blob name '$NewOSBlobName' is attached to VM '$VmNameWhereDiskIsAttached'" -ForegroundColor Yellow
+
+
+$VmWhereDiskIsAttachedObject = Get-AzVM | ?{$_.Name -eq $VmNameWhereDiskIsAttached}
+$OSDiskOfFoundVM = $VmWhereDiskIsAttachedObject.StorageProfile.OsDisk.Name
+}
+}
+
+if ($DiskAttachedToVM -ne $null) # if 'ManagedBy' property is not $null, means disk is attached to Vm from 'ManagedBy' property
+{
+
+
 
 function Show-DetachMenu
     {
@@ -626,6 +930,10 @@ function Show-DetachMenu
 
          {
 
+         # For Managed disks
+        if($null -eq $import.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed
+        {
+
          #check if disk is OS disk or data disk
 
         if ($OSDiskOfFoundVM -eq $OSDiskName) #disk is OS disk, will not detach and continue
@@ -638,6 +946,7 @@ function Show-DetachMenu
             {
             Write-Host ""
             Write-Host "Detaching disk..."
+            Write-Host ""
        
 
             #Detach disk from VM
@@ -649,7 +958,40 @@ function Show-DetachMenu
             Write-Host ""
             Write-Host "Disk was detached from VM '$VmNameWhereDiskIsAttached'"
             }
-        }
+            }
+
+            # For UnManaged disks
+            if($null -ne $import.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Unmanaged
+            {
+
+            #check if disk is OS disk or data disk
+
+            if ($OSDiskOfFoundVM -eq $NewOsDiskNameFromMetadata) #disk is OS disk, will not detach and continue
+            {
+            Write-Host ""
+            Write-host "The disk is the OS disk and cannot be detached. Will continue"
+            }
+
+
+            if ($OSDiskOfFoundVM -ne $NewOsDiskNameFromMetadata) # disk is data disk, detaching 
+            {
+            Write-Host ""
+            Write-Host "Detaching disk..."
+       
+            #Detach disk from VM
+            Remove-AzVMDataDisk -DataDiskNames $NewOsDiskNameFromMetadata -VM $VmWhereDiskIsAttachedObject -ErrorAction Stop | Out-Null
+
+            #update VM
+            $VmWhereDiskIsAttachedObject | Update-AzVM | Out-Null
+
+            Write-Host ""
+            Write-Host "Disk was detached from VM '$VmNameWhereDiskIsAttached'"
+            Write-Host ""
+            }
+
+
+            }
+         }
 
         if ($selection -eq "2")
         
@@ -1693,12 +2035,12 @@ try{
 #           Check if OS disk and NICs are set to be deleted when VM is deleted         #
 ###################################################################################################################################################################################
 
+if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed.
+
+{
 #Check if OS disk is set to be deleted when VM is deleted
 $osDiskDeleteOption = $import.StorageProfile.OsDisk.DeleteOption 
 
-if ($osDiskDeleteOption -eq "delete") # if "deleteOption": "Delete", then OS disk is set to be deleted when VM is deleted. Changing "deleteOption" to "Detach"
-
-{
 Write-Host "OS disk was set to be deleted when VM is delete!" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Disabling this option..."
@@ -1725,8 +2067,8 @@ Write-Host "Disabling this option..."
 Write-Host ""
 Write-Host "Option was disabled!" -ForegroundColor green
 Write-Host ""
-}
 
+}
 
 #Check if NIC is set to be deleted when VM is deleted
 
@@ -1855,11 +2197,17 @@ $vmConfig = Add-AzVMNetworkInterface -VM $vmConfig -Id $SecondaryNicsIds_iterato
 
 }
 
-#Get OS Disk ID
-$OSDiskID = (Get-AzDisk -DiskName $OSDiskName -ResourceGroupName $OSDiskRg).Id
+# Managed Disks
+if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed.
+    {
+
+    #Get OS Disk ID
+    $OSDiskID = (Get-AzDisk -DiskName $OSDiskName -ResourceGroupName $OSDiskRg).Id
 
 
-$vmConfig = Set-AzVMOSDisk -VM $vmConfig -ManagedDiskId $OSDiskID -Name $osDiskName -CreateOption attach -Windows -ErrorAction Stop
+    $vmConfig = Set-AzVMOSDisk -VM $vmConfig -ManagedDiskId $OSDiskID -Name $osDiskName -CreateOption attach -Windows -ErrorAction Stop
+    }
+
 
 if ($PlanName -ne $null)
 {
@@ -1868,20 +2216,25 @@ Set-AzVMPlan -VM $vmConfig -Publisher $PlanPublisher -Product $PlanProduct -Name
 ###
 $Bootdiagnostics = $import.DiagnosticsProfile.BootDiagnostics.StorageUri
 
-if ($Bootdiagnostics -ne $null)
-{
-$StorageAccountNameTemp = $Bootdiagnostics.Split('/')[2]
-$StorageAccountName = $StorageAccountNameTemp.Split('.')[0]
-$StorageAccountRG = (Get-AzStorageAccount | ?{$_.StorageAccountName -eq $StorageAccountName}).ResourceGroupName
+        if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed. this is not suported for unmanaged disks
 
-$vmConfig = Set-AzVMBootDiagnostic -VM $vmConfig -Enable -ResourceGroupName $StorageAccountRG -StorageAccountName $StorageAccountName
-}
+        {
+            if ($Bootdiagnostics -ne $null)
+            {
+            $StorageAccountNameTemp = $Bootdiagnostics.Split('/')[2]
+            $StorageAccountName = $StorageAccountNameTemp.Split('.')[0]
+            $StorageAccountRG = (Get-AzStorageAccount | ?{$_.StorageAccountName -eq $StorageAccountName}).ResourceGroupName
 
-if ($Bootdiagnostics -eq $null)
-{
-#Enabling boot diagnostics
-$vmConfig = Set-AzVMBootDiagnostic -VM $vmConfig -Enable
-}
+            $vmConfig = Set-AzVMBootDiagnostic -VM $vmConfig -Enable -ResourceGroupName $StorageAccountRG -StorageAccountName $StorageAccountName
+            }
+        
+
+            if ($Bootdiagnostics -eq $null)
+            {
+            #Enabling boot diagnostics
+            $vmConfig = Set-AzVMBootDiagnostic -VM $vmConfig -Enable
+            }
+        }
 
 # Check what is the operating system
 $WindowsOrLinux = $import.StorageProfile.OsDisk.OsType
@@ -1889,40 +2242,141 @@ $WindowsOrLinux = $import.StorageProfile.OsDisk.OsType
 
 if ($WindowsOrLinux -eq "Windows")
 {
-# Adding data disks:    Note: If we attach data disks to Linux VM in the creation phase, OS will not mount properly data disks and will mess the entire process. Data disks on Linux Vms will be added after Linux VM was created
 
-$DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id 
-$DataDisksLUN = 0
-
-    foreach ($DataDisksIDs_iterator in $DataDisksIDs)
+#Managed disks
+if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed
     {
-    Add-AzVMDataDisk -VM $vmConfig -ManagedDiskId $DataDisksIDs_iterator -Lun $DataDisksLUN -CreateOption Attach  -ErrorAction Stop | Out-Null
-    $DataDisksLUN++
+
+    $DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id 
+    $DataDisksLUN = 0
+
+        foreach ($DataDisksIDs_iterator in $DataDisksIDs)
+        {
+        Add-AzVMDataDisk -VM $vmConfig -ManagedDiskId $DataDisksIDs_iterator -Lun $DataDisksLUN -CreateOption Attach  -ErrorAction Stop | Out-Null
+        $DataDisksLUN++
+        }
+
+    Write-host "The operating system is Windows"
+    Write-host ""
+
+    Set-AzVmOSDisk -VM $vmConfig -ManagedDiskId $OSDiskID -DiskEncryptionKeyUrl $SecretUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -windows -CreateOption Attach -ErrorAction Stop | Out-Null
     }
 
-Write-host "The operating system is Windows"
-Write-host ""
+# Unmanaged disks
+if($null -ne $vm.StorageProfile.OsDisk.Vhd) #if this is NOT null, then the disk is UnManaged
+    {
 
-Set-AzVmOSDisk -VM $vmConfig -ManagedDiskId $OSDiskID -DiskEncryptionKeyUrl $SecretUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -windows -CreateOption Attach -ErrorAction Stop | Out-Null
+    $DataDisksURIs = $import.StorageProfile.DataDisks.vhd.uri
+    $DataDisksNames = $import.StorageProfile.DataDisks.name
+    $DataDisksLUN = 0
 
+        foreach ($DataDisksURIs_iterator in $DataDisksURIs)
+        {
+
+        $DataDiskStorageAccountName = $DataDisksURIs_iterator.Split('/')[2]
+        $DataDiskStorageAccountName = $DataDiskStorageAccountName.Split('.')[0]
+        $DataDiskContainer = $DataDisksURIs_iterator.Split('/')[3]
+        $DataDiskBlobName = $DataDisksURIs_iterator.Split('/')[4]
+
+        # get OS disk Storage Account Resource group Name (source storage account)
+        $DataDiskStorageAccountResourceGroupName = (Get-AzStorageAccount | ?{$_.StorageAccountName -eq $DataDiskStorageAccountName}).ResourceGroupName
+        # Storage Account Keys
+        $StorageKey = Get-AzStorageAccountKey -Name $DataDiskStorageAccountName -ResourceGroupName $DataDiskStorageAccountResourceGroupName 
+
+        # Storage Account Context
+        $Context = New-AzStorageContext -StorageAccountName $DataDiskStorageAccountName -StorageAccountKey $StorageKey.Value[0]
+        $datadisks = Get-AzStorageBlob -Container $DataDiskContainer -Context $context
+        $DataDiskObject = $datadisks | Where-Object {$_.BlobType -eq 'PageBlob' -and $_.Name -eq $DataDiskBlobName}
+        $DataDiskName = $DataDiskObject.ICloudBlob.Metadata.MicrosoftAzureCompute_DiskName
+
+        Add-AzVMDataDisk -VM $vmConfig -Name $DataDiskName -VhdUri $DataDisksURIs_iterator -Lun $DataDisksLUN -CreateOption Attach  -ErrorAction Stop | Out-Null
+        $DataDisksLUN++
+        }
+
+        Write-host "The operating system is Windows"
+        Write-host ""
+
+if ($VmNameWhereDiskIsAttached -ne $null)
+{
+Set-AzVMOSDisk -VM $vmConfig -Name $NewOsDiskNameFromMetadata -VhdUri $NewOSDiskURI -DiskEncryptionKeyUrl $SecretUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -windows -CreateOption Attach -ErrorAction Stop | Out-Null
+}
+
+if ($VmNameWhereDiskIsAttached -eq $null)
+{
+$NewOsDiskName = $NewOSBlobName.TrimEnd('.vhd')
+Set-AzVMOSDisk -VM $vmConfig -Name $NewOsDiskName -VhdUri $NewOSDiskURI -DiskEncryptionKeyUrl $SecretUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -windows -CreateOption Attach -ErrorAction Stop | Out-Null
+}
+
+}
 }
 
 
 if ($WindowsOrLinux -eq "Linux")
 {
-$DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id 
-$DataDisksLUN = 0
-
-    foreach ($DataDisksIDs_iterator in $DataDisksIDs)
+# Managed disks
+if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed
     {
-    Add-AzVMDataDisk -VM $vmConfig -ManagedDiskId $DataDisksIDs_iterator -Lun $DataDisksLUN -CreateOption Attach  -ErrorAction Stop | Out-Null
-    $DataDisksLUN++
+    $DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id 
+    $DataDisksLUN = 0
+
+        foreach ($DataDisksIDs_iterator in $DataDisksIDs)
+        {
+        Add-AzVMDataDisk -VM $vmConfig -ManagedDiskId $DataDisksIDs_iterator -Lun $DataDisksLUN -CreateOption Attach  -ErrorAction Stop | Out-Null
+        $DataDisksLUN++
+        }
+
+    Write-host "The operating system is Linux"
+    Write-host ""
+    Set-AzVmOSDisk -VM $vmConfig -ManagedDiskId $OSDiskID -DiskEncryptionKeyUrl $SecretUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -Linux -CreateOption Attach -ErrorAction Stop | Out-Null
     }
 
-Write-host "The operating system is Linux"
-Write-host ""
-Set-AzVmOSDisk -VM $vmConfig -ManagedDiskId $OSDiskID -DiskEncryptionKeyUrl $SecretUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -Linux -CreateOption Attach -ErrorAction Stop | Out-Null
+# Unmanaged disks
+if($null -ne $vm.StorageProfile.OsDisk.Vhd) #if this is NOT null, then the disk is UnManaged
+    {
+
+    $DataDisksURIs = $import.StorageProfile.DataDisks.vhd.uri
+    $DataDisksNames = $import.StorageProfile.DataDisks.name
+    $DataDisksLUN = 0
+
+        foreach ($DataDisksURIs_iterator in $DataDisksURIs)
+        {
+
+        $DataDiskStorageAccountName = $DataDisksURIs_iterator.Split('/')[2]
+        $DataDiskStorageAccountName = $DataDiskStorageAccountName.Split('.')[0]
+        $DataDiskContainer = $DataDisksURIs_iterator.Split('/')[3]
+        $DataDiskBlobName = $DataDisksURIs_iterator.Split('/')[4]
+
+        # get OS disk Storage Account Resource group Name (source storage account)
+        $DataDiskStorageAccountResourceGroupName = (Get-AzStorageAccount | ?{$_.StorageAccountName -eq $DataDiskStorageAccountName}).ResourceGroupName
+        # Storage Account Keys
+        $StorageKey = Get-AzStorageAccountKey -Name $DataDiskStorageAccountName -ResourceGroupName $DataDiskStorageAccountResourceGroupName 
+
+        # Storage Account Context
+        $Context = New-AzStorageContext -StorageAccountName $DataDiskStorageAccountName -StorageAccountKey $StorageKey.Value[0]
+        $datadisks = Get-AzStorageBlob -Container $DataDiskContainer -Context $context
+        $DataDiskObject = $datadisks | Where-Object {$_.BlobType -eq 'PageBlob' -and $_.Name -eq $DataDiskBlobName}
+        $DataDiskName = $DataDiskObject.ICloudBlob.Metadata.MicrosoftAzureCompute_DiskName
+
+        Add-AzVMDataDisk -VM $vmConfig -Name $DataDiskName -VhdUri $DataDisksURIs_iterator -Lun $DataDisksLUN -CreateOption Attach  -ErrorAction Stop | Out-Null
+        $DataDisksLUN++
+        }
+
+        Write-host "The operating system is Linux"
+        Write-host ""
+if ($VmNameWhereDiskIsAttached -ne $null)
+    {
+    Set-AzVMOSDisk -VM $vmConfig -Name $NewOsDiskNameFromMetadata -VhdUri $NewOSDiskURI -DiskEncryptionKeyUrl $SecretUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -linux -CreateOption Attach -ErrorAction Stop | Out-Null
+    }
+
+if ($VmNameWhereDiskIsAttached -eq $null)
+    {
+    $NewOsDiskName = $NewOSBlobName.TrimEnd('.vhd')
+    Set-AzVMOSDisk -VM $vmConfig -Name $NewOsDiskName -VhdUri $NewOSDiskURI -DiskEncryptionKeyUrl $SecretUrl -DiskEncryptionKeyVaultId $DiskEncryptionKeyVaultID -KeyEncryptionKeyUrl $keyEncryptionKeyUrl -KeyEncryptionKeyVaultId $KeyVaultIDforKey -linux -CreateOption Attach -ErrorAction Stop | Out-Null
+    }
+   }
+
 }
+
 
 
 
@@ -1954,11 +2408,11 @@ if ($VmExistsOrDelete -eq "E")
 
     if ($ConfirmationToDeleteVM -eq "D")
     {
-    
-        # First Detach data disks from VM           
+      if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed
+        {
+                # First Detach data disks from VM           
         Write-Host "Detaching data disks from VM ..."
         Write-Host ""
-
         $DataDisksIDs = $import.StorageProfile.DataDisks.ManagedDisk.id
 
         #storing again Vm into a variable since disks were detached in the meantime
@@ -1971,6 +2425,14 @@ if ($VmExistsOrDelete -eq "E")
 
         $vm | Update-AzVM | Out-Null
 
+        }
+
+        if($null -ne $vm.StorageProfile.OsDisk.Vhd) #if this is NOT null, then the disk is UnManaged
+        {
+
+        # Disks are not detached if disks are unmanaged disks
+
+        }
         # Delete VM
         Write-Host "Deleting VM..." -ForegroundColor Yellow
         Write-Host ""
@@ -2480,20 +2942,45 @@ if ($Check_if_VM_Is_Encrypted_with_Dual_Pass -ne $null -and $EncryptedWithKEK-eq
 #   Delete the backup disk that was created at the beginning of the script   #
 ##############################################################################
 
+if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed
+{
     
 Write-Host ""
 Write-Host "Once you confirm everything worked as it is expected, please do not forget to manually delete the copy of the disk that was created in resource group '$OSDiskRg' with name '$NewDiskName'" -ForegroundColor Yellow
+
+}
+
+if($null -ne $vm.StorageProfile.OsDisk.Vhd) #if this is NOT null, then the disk is UnManaged
+{
+Write-Host ""
+Write-Host "Once you confirm everything worked as it is expected, please do not forget to manually delete the copy of the unmanaged OS disk with name '$DiskCopyBlobName' from '$CurrentOSDiskContainer' container in storage account '$CurrentOSDiskStorageAccountName'" -ForegroundColor Yellow
+}
 
 Write-Host ""
 $DeleteCopyOfDisk = Read-Host "Do you want to delete it now? (Y\N)"
 
 if ($DeleteCopyOfDisk -eq "Y")
 {
+
+if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed
+{
 Write-Host ""
 Write-Host "Deleting disk..."
 Remove-AzDisk -ResourceGroupName $OSDiskRg -DiskName $NewDiskName -Force | Out-Null
 Write-Host ""
 Write-Host "Backup Disk was deleted" -ForegroundColor green
+}
+
+if($null -ne $vm.StorageProfile.OsDisk.Vhd) #if this is NOT null, then the disk is UnManaged
+{
+Write-Host ""
+Write-Host "Deleting disk..."
+
+Get-AzureStorageBlob -Container $CurrentOSDiskContainer -Blob $DiskCopyBlobName -context $CurrentOSContext | Remove-AzureStorageBlob
+Write-Host ""
+Write-Host "Backup Disk was deleted" -ForegroundColor green
+}
+
 }
 
 ################################################################################################################################
