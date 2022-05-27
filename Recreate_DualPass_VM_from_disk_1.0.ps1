@@ -2197,6 +2197,20 @@ $vmConfig = Add-AzVMNetworkInterface -VM $vmConfig -Id $SecondaryNicsIds_iterato
 
 }
 
+
+
+# Tags
+ $tags = $import.Tags
+ If ($tags -ne $null)
+ {
+ foreach($tag in $tags.psobject.Properties.Name){
+   $newtags += @{$tag = $tags.$tag} 
+   }
+ }
+
+
+
+
 # Managed Disks
 if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is Managed.
     {
@@ -2501,6 +2515,10 @@ Write-Host ""
 
 
    # Creating VM. If the create Vm operation (New-AzVm) is taking more than 2 min to return status if Vm was created or not (it can happen if OS does not boot and VM agent not reporting status), will continue
+     If ($tags -ne $null)
+ {
+ New-AzVm -ResourceGroupName $VMRgName -Location $location -VM $vmConfig -Tag $newtags -DisableBginfoExtension -AsJob | Out-Null
+ }
     New-AzVm -ResourceGroupName $VMRgName -Location $location -VM $vmConfig -DisableBginfoExtension -AsJob | Out-Null
 
 
@@ -2584,6 +2602,11 @@ Write-Host ""
 
 
    # Creating VM. If the create Vm operation (New-AzVm) is taking more than 2 min to return status if Vm was created or not (it can happen if OS does not boot and VM agent not reporting status), will continue
+    
+         If ($tags -ne $null)
+     {
+     New-AzVm -ResourceGroupName $VMRgName -Location $location -VM $vmConfig -Tag $newtags -DisableBginfoExtension -AsJob | Out-Null
+     }
     New-AzVm -ResourceGroupName $VMRgName -Location $location -VM $vmConfig -AsJob | Out-Null
 
 
