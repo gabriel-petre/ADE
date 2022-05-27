@@ -9,7 +9,17 @@
    [Parameter(Mandatory = $true)] [String] $RescueVmPassword,
    [Parameter(Mandatory = $true)] [String] $SubscriptionID,
    [Parameter(Mandatory = $false)] [switch] $associatepublicip,
-   [Parameter(Mandatory = $false)] [switch] $enablenested
+   [Parameter(Mandatory = $false)] [switch] $enablenested,
+   [Parameter(Mandatory = $false)] [String] $TagName1,
+   [Parameter(Mandatory = $false)] [String] $TagValue1,
+   [Parameter(Mandatory = $false)] [String] $TagName2,
+   [Parameter(Mandatory = $false)] [String] $TagValue2,
+   [Parameter(Mandatory = $false)] [String] $TagName3,
+   [Parameter(Mandatory = $false)] [String] $TagValue3,
+   [Parameter(Mandatory = $false)] [String] $TagName4,
+   [Parameter(Mandatory = $false)] [String] $TagValue4,
+   [Parameter(Mandatory = $false)] [String] $TagName5,
+   [Parameter(Mandatory = $false)] [String] $TagValue5
   
 ) 
 # Keep alive Azure Cloud shell session for at least 20 minutes which is the default timeout period
@@ -31,7 +41,76 @@ Write-Host ""
 #Write-Host "Disabling warning messages to users that the cmdlets used in this script may be changed in the future." -ForegroundColor Yellow
 Set-Item Env:\SuppressAzurePowerShellBreakingChangeWarnings "true"
 
-# Connect to Az Account
+################################################################################################################
+#   Verifying if TagName and TagValue switch was specified and building tag array to add tag on the rescue VM  #
+################################################################################################################
+
+$tags = @{}
+
+# Tag 1
+
+if ($TagName1)
+{ 
+    if (!$TagValue1)
+    {
+    Write-Host ""
+    $TagValue1 = Read-Host "'TagValue1' was not specified. Please specify the value for 'TagValue1'"
+    Write-Host ""
+    }
+$tags += @{$TagName1 = $TagValue1} }
+
+#Tag 2
+
+if ($TagName2)
+{ 
+    if (!$TagValue2)
+    {
+    Write-Host ""
+    $TagValue2 = Read-Host "'TagValue2' was not specified. Please specify the value for 'TagValue2'"
+    Write-Host ""
+    }
+$tags += @{$TagName2 = $TagValue2} }
+
+#Tag 3
+
+if ($TagName3)
+{ 
+    if (!$TagValue3)
+    {
+    Write-Host ""
+    $TagValue3 = Read-Host "'TagValue3' was not specified. Please specify the value for 'TagValue3'"
+    Write-Host ""
+    }
+$tags += @{$TagName3 = $TagValue3} }
+
+#Tag 4
+
+if ($TagName4)
+{ 
+    if (!$TagValue4)
+    {
+    Write-Host ""
+    $TagValue4 = Read-Host "'TagValue4' was not specified. Please specify the value for 'TagValue4'"
+    Write-Host ""
+    }
+$tags += @{$TagName4 = $TagValue4} }
+
+#Tag 5
+
+if ($TagName5)
+{ 
+    if (!$TagValue5)
+    {
+    Write-Host ""
+    $TagValue5 = Read-Host "'TagValue5' was not specified. Please specify the value for 'TagValue5'"
+    Write-Host ""
+    }
+$tags += @{$TagName5 = $TagValue5} }
+
+#######################################
+#       Connect to Az Account        #
+#######################################
+
 Connect-AzAccount -UseDeviceAuthentication
 
 #######################################
@@ -1268,14 +1347,24 @@ $VirtualMachine = Set-AzVMOSDisk -VM $VirtualMachine -Name $OSDiskName -VhdUri $
  
  if ($WindowsOrLinux -eq "Windows")
 {
-# Create the VM.
-New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine -DisableBginfoExtension | Out-Null
+    if ($TagName1 -ne $null -or $TagName2 -ne $null -or $TagName3 -ne $null -or $TagName4 -ne $null -or $TagName5 -ne $null)
+    { # Add tags during VM creation
+    New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine -Tag $tags -DisableBginfoExtension | Out-Null
+    }
+
+    # Create the VM without tags
+    New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine -DisableBginfoExtension | Out-Null
 }
 
 if ($WindowsOrLinux -eq "Linux")
 {
-# Create the VM.
-New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine | Out-Null
+    if ($TagName1 -ne $null -or $TagName2 -ne $null -or $TagName3 -ne $null -or $TagName4 -ne $null -or $TagName5 -ne $null)
+    { # Add tags during VM creation
+    New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine -Tag $tags | Out-Null
+    }
+
+    # Create the VM without tags
+    New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine | Out-Null
 }
 
 #Wait until VM guest agent becomes ready
