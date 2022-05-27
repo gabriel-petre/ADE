@@ -151,10 +151,9 @@ Please check the diagram with the detailed steps: <br />
 [![Image Link Text]
 ### Diagram
 Please check the diagram with the detailed steps 
-<br />*(click on the image to open the diagram in a new tab in full size)*
+<br />*(click on the link to open the diagram in a new tab in full size)*
 <br />
-<br /> [Recreate DualPass VM from Disk - Diagram](https://github.com/gabriel-petre/ADE/blob/178ff253692f54aac99ed92ff7be9110f7d7234e/Recreate_DualPass_VM_from_disk/Recreate_DualPass_VM_from_disk.jpg)
-
+<br /> [Recreate DualPass VM from Disk - Diagram](https://raw.githubusercontent.com/gabriel-petre/ADE/main/Recreate_DualPass_VM_from_disk/Recreate_DualPass_VM_from_disk.jpg)
 <br />
 
 # Troubleshooting logs:
