@@ -2041,6 +2041,9 @@ if($null -eq $vm.StorageProfile.OsDisk.Vhd) #if this is null, then the disk is M
 #Check if OS disk is set to be deleted when VM is deleted
 $osDiskDeleteOption = $import.StorageProfile.OsDisk.DeleteOption 
 
+If ($osDiskDeleteOption -eq "delete")
+
+{
 Write-Host "OS disk was set to be deleted when VM is delete!" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Disabling this option..."
@@ -2068,6 +2071,7 @@ Write-Host ""
 Write-Host "Option was disabled!" -ForegroundColor green
 Write-Host ""
 
+}
 }
 
 #Check if NIC is set to be deleted when VM is deleted
