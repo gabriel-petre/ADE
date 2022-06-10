@@ -8,6 +8,13 @@
    [Parameter(Mandatory = $true)] [String] $RescueVmUserName,
    [Parameter(Mandatory = $true)] [String] $RescueVmPassword,
    [Parameter(Mandatory = $true)] [String] $SubscriptionID,
+   [Parameter(Mandatory = $false)] [String] $NewVnetAndSubnet,
+   [Parameter(Mandatory = $false)] [String] $VnetName,
+   [Parameter(Mandatory = $false)] [String] $SubnetName,
+   [Parameter(Mandatory = $false)] [String] $VnetRG,
+   [Parameter(Mandatory = $false)] [String] $NicNsgName,
+   [Parameter(Mandatory = $false)] [String] $NicNsgRG,
+   [Parameter(Mandatory = $false)] [String] $NsgRdpSshAllowRules,
    [Parameter(Mandatory = $false)] [switch] $associatepublicip,
    [Parameter(Mandatory = $false)] [switch] $enablenested,
    [Parameter(Mandatory = $false)] [String] $TagName1,
@@ -129,7 +136,7 @@ Write-host "Subscription '$currentSubscription' was selected" -ForegroundColor g
 write-host ""
 
 ######################################################
-#          Testing if VM exist and get variables     #
+#          Testing if VM exist and other variables   #
 ######################################################
 
 #VM object
@@ -172,6 +179,44 @@ $secretUri = [System.Uri] $secretUrl;
 $keyVaultName = $secretUri.Host.Split('.')[0];
 }
 
+#Testing if Switch '-NewVnetAndSubnet' or VNET\Subnet names were specified. If not, prompt for entering the VNET\Subnet names
+
+if (!$NewVnetAndSubnet)
+{
+    Write-Host "Switch '-NewVnetAndSubnet' which will create a new VNET and subnet was not specified" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Checking if existing Vnet Name and Subnet Name were specified..." 
+    Write-Host ""
+
+    If (!$VnetName)
+    {
+    $VnetName = Read-Host "Existing Vnet Name was not specified. Enter exsting Vnet Name"
+    }
+
+    if (!$SubnetName )
+    {
+    $SubnetName = Read-Host "Existing Subnet Name was not specified. Enter exsting Subnet Name"
+    }
+
+    if (!$VnetRG)
+    {
+    $VnetRG = Read-Host "Existing VNET resource group name was not specified. Enter resource group name"
+    }
+
+    Write-Host "Existing Vnet Name, Subnet Name and VNET resource group name were specified!" -ForegroundColor Green
+    Write-Host ""
+}
+
+#Testing if '-NsgName' switch was specified, check if '-NsgRG' switch was also specified
+
+if ($NsgName)
+{
+    if ($NsgRG -eq $null)
+    {
+    $NsgRG =  Read-Host "Existing NSG resource group name was not specified. NSG resource group name"
+    }
+
+}
 
 ######################################################
 #      Check Permissions on secrets and keys        #
@@ -869,17 +914,11 @@ $HostnameRescueVMLength = $HostnameRescueVM.Length
     $HostnameRescueVMLength = $HostnameRescueVMLength - 15
     $HostnameRescueVM = $HostnameRescueVM.Substring(0,$HostnameRescueVM.Length-$HostnameRescueVMLength)
     }
+$HostnameRescueVM = $HostnameRescueVM.Replace('_', '')
 $location = $vm.Location
 $VMSize = "Standard_D2s_v3"
 $password = ConvertTo-SecureString "$RescueVmPassword" -AsPlainText -Force
 $Credential = New-Object System.Management.Automation.PSCredential ("$RescueVmUserName", $password)
-$Vnetname = ("VNET_" + $RescueVmName)
-$RGofVNET = "$RescueVmRg"
-$subnetName = "default"
-$SubnetAddressPrefix = "10.0.0.0/24"
-$VnetAddressPrefix = "10.0.0.0/16"
-$NGSName = ("NSG_" + $RescueVmName)
-$RGofNSG = "$RescueVmRg"
 $PublicIPName = ("PublicIP_" + $RescueVmName)
 $PublicIpRgName = "$RescueVmRg"
 $nicName = ("NIC_" + $RescueVmName)
@@ -900,26 +939,180 @@ Write-Host "Operating system is Windows"
 #Set Hostname and Credentials
 $VirtualMachine = Set-AzVMOperatingSystem -VM $vmConfig -Windows -ComputerName "$HostnameRescueVM" -Credential $Credential -ProvisionVMAgent
 
-#Windows Server 2016
-$Win2016DefaultPublisher = "MicrosoftWindowsServer"
-$Win2016DefaultOffer = "WindowsServer"
-$Win2016DefaultSku = "2016-Datacenter"
-$Win2016DefaultVersion = "14393.4350.2104091630" # Tested Versions: "14393.4350.2104091630", "14393.5066.220403"
+$BrokenVMSKU = $vm.StorageProfile.ImageReference.Sku
 
-#Windows Server 2019
-$Win2019DefaultPublisher = "MicrosoftWindowsServer"
-$Win2019DefaultOffer = "WindowsServer"
-$Win2019DefaultSku = "2019-Datacenter"
-$Win2019DefaultVersion = "latest"
+if ($BrokenVMSKU -like "*2016-Datacenter*")
+    {
+    #Windows Server 2019
+    $Win2019DefaultPublisher = "MicrosoftWindowsServer"
+    $Win2019DefaultOffer = "WindowsServer"
+    $Win2019DefaultSku = "2019-Datacenter"
+    $Win2019DefaultVersion = "latest"
 
-#Windows Server 2022
-$Win2022DefaultPublisher = "MicrosoftWindowsServer"
-$Win2022DefaultOffer = "WindowsServer"
-$Win2022DefaultSku = "2022-Datacenter"
-$Win2022DefaultVersion = "latest"
+    #Windows Server 2022
+    $Win2022DefaultPublisher = "MicrosoftWindowsServer"
+    $Win2022DefaultOffer = "WindowsServer"
+    $Win2022DefaultSku = "2022-Datacenter"
+    $Win2022DefaultVersion = "latest"
+
+    function DefaultOsWinMenu
+    {
+    param (
+        [string]$Title = 'Image selection Menu for creating Rescue VM'
+    )
+
+    Write-Host "========================================================================================== $Title ============================================================================"
+    Write-Host ""
+    Write-Host "1: Create VM '$RescueVmName' from generation 1 Windows Server 2016 default image" -ForegroundColor DarkGray; 
+    Write-Host "   (Option not supported. Rescue VM cannot have the same OS version as the affected one)" -ForegroundColor red
+    Write-Host ""
+    Write-Host "2: Create VM '$RescueVmName' from generation 1 Windows Server 2019 default image"
+    Write-Host ""
+    Write-Host "3: Create VM '$RescueVmName' from generation 1 Windows Server 2022 default image"
+    Write-Host ""
+    Write-Host "Q: Press 'Q' to quit."
+    Write-Host ""
+    Write-Host "==================================================================================================================================================================================================================="
+
+    }
+
+     do{
+     Write-Host ""
+     #call 'DefaultOsWinMenu' function
+     DefaultOsWinMenu
+     $selection = Read-Host "Please make a selection"
+     Write-Host ""
+     switch ($selection)
+     {
+           '1' {Write-host "You chose option #1. Option not supported. Rescue VM cannot have the same OS version as the affected one" -ForegroundColor red}
+           '2' {Write-host "You chose option #2. VM '$RescueVmName' will be created from generation 1 Windows Server 2019 default image" -ForegroundColor green}
+           '3' {Write-host "You chose option #3. VM '$RescueVmName' will be created from generation 1 Windows Server 2022 default image" -ForegroundColor green}
+
+     }
+
+   } until ($selection -eq '2' -or $selection -eq '3' -or $selection -eq 'q')
+
+         if ($selection -eq 'q')
+
+         {
+         Write-Host "Script will exit" -ForegroundColor Green
+         Write-Host ""
+         exit
+         }
+   
+        if ($selection -eq "2") # Rescue VM will be created from Windows Server 2019 default image
+
+         {
+
+        #Set source Marketplace image Windows Server 2019
+        $VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName $Win2019DefaultPublisher -Offer $Win2019DefaultOffer -Skus $Win2019DefaultSku -Version $Win2019DefaultVersion 
+        }
+
+     if ($selection -eq "3") # Rescue VM will be created from Windows Server 2022 default image
+
+         {
+
+        #Set source Marketplace image Windows Server 2022
+        $VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName $Win2022DefaultPublisher -Offer $Win2022DefaultOffer -Skus $Win2022DefaultSku -Version $Win2022DefaultVersion 
+        }
+    }
+
+if ($BrokenVMSKU -like "*2019-Datacenter*")
+    {
+    #Windows Server 2016
+    $Win2016DefaultPublisher = "MicrosoftWindowsServer"
+    $Win2016DefaultOffer = "WindowsServer"
+    $Win2016DefaultSku = "2016-Datacenter"
+    $Win2016DefaultVersion = "latest"
+    #$Win2016DefaultVersion = "14393.4350.2104091630" # Tested Versions: "14393.4350.2104091630", "14393.5066.220403"
+
+    #Windows Server 2022
+    $Win2022DefaultPublisher = "MicrosoftWindowsServer"
+    $Win2022DefaultOffer = "WindowsServer"
+    $Win2022DefaultSku = "2022-Datacenter"
+    $Win2022DefaultVersion = "latest"
+
+    function DefaultOsWinMenu
+    {
+    param (
+        [string]$Title = 'Image selection Menu for creating Rescue VM'
+    )
+
+    Write-Host "========================================================================================== $Title ============================================================================"
+    Write-Host ""
+    Write-Host "1: Create VM '$RescueVmName' from generation 1 Windows Server 2016 default image" 
+    Write-Host ""
+    Write-Host "2: Create VM '$RescueVmName' from generation 1 Windows Server 2019 default image" -ForegroundColor DarkGray; 
+    Write-Host "   (Option not supported. Rescue VM cannot have the same OS version as the affected one)" -ForegroundColor red
+    Write-Host ""
+    Write-Host "3: Create VM '$RescueVmName' from generation 1 Windows Server 2022 default image"
+    Write-Host ""
+    Write-Host "Q: Press 'Q' to quit."
+    Write-Host ""
+    Write-Host "==================================================================================================================================================================================================================="
+
+    }
+
+     do{
+     Write-Host ""
+     #call 'DefaultOsWinMenu' function
+     DefaultOsWinMenu
+     $selection = Read-Host "Please make a selection"
+     Write-Host ""
+     switch ($selection)
+     {
+           '1' {Write-host "You chose option #1. VM '$RescueVmName' will be created from generation 1 Windows Server 2016 default image" -ForegroundColor green}
+           '2' {Write-host "You chose option #2. Option not supported. Rescue VM cannot have the same OS version as the affected one" -ForegroundColor red}
+           '3' {Write-host "You chose option #3. VM '$RescueVmName' will be created from generation 1 Windows Server 2022 default image" -ForegroundColor green}
+
+     }
+
+   } until ($selection -eq '1'-or $selection -eq '3' -or $selection -eq 'q')
+
+         if ($selection -eq 'q')
+
+         {
+         Write-Host "Script will exit" -ForegroundColor Green
+         Write-Host ""
+         exit
+         }
 
 
-function DefaultOsWinMenu
+        if ($selection -eq "1") # Rescue VM will be created from Windows Server 2016 default image
+
+         {
+
+        #Set source Marketplace image Windows Server 2016
+        $VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName $Win2016DefaultPublisher -Offer $Win2016DefaultOffer -Skus $Win2016DefaultSku -Version $Win2016DefaultVersion
+
+        }
+
+
+        if ($selection -eq "3") # Rescue VM will be created from Windows Server 2022 default image
+
+         {
+
+        #Set source Marketplace image Windows Server 2022
+        $VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName $Win2022DefaultPublisher -Offer $Win2022DefaultOffer -Skus $Win2022DefaultSku -Version $Win2022DefaultVersion 
+        }
+    }
+
+if ($BrokenVMSKU -like "*2022-Datacenter*")
+    {
+    #Windows Server 2016
+    $Win2016DefaultPublisher = "MicrosoftWindowsServer"
+    $Win2016DefaultOffer = "WindowsServer"
+    $Win2016DefaultSku = "2016-Datacenter"
+    $Win2016DefaultVersion = "latest"
+    #$Win2016DefaultVersion = "14393.4350.2104091630" # Tested Versions: "14393.4350.2104091630", "14393.5066.220403"
+
+    #Windows Server 2019
+    $Win2019DefaultPublisher = "MicrosoftWindowsServer"
+    $Win2019DefaultOffer = "WindowsServer"
+    $Win2019DefaultSku = "2019-Datacenter"
+    $Win2019DefaultVersion = "latest"
+
+    function DefaultOsWinMenu
     {
     param (
         [string]$Title = 'Image selection Menu for creating Rescue VM'
@@ -931,7 +1124,8 @@ function DefaultOsWinMenu
     Write-Host ""
     Write-Host "2: Create VM '$RescueVmName' from generation 1 Windows Server 2019 default image"
     Write-Host ""
-    Write-Host "3: Create VM '$RescueVmName' from generation 1 Windows Server 2022 default image"
+    Write-Host "3: Create VM '$RescueVmName' from generation 1 Windows Server 2022 default image" -ForegroundColor DarkGray; 
+    Write-Host "   (Option not supported. Rescue VM cannot have the same OS version as the affected one)" -ForegroundColor red
     Write-Host ""
     Write-Host "Q: Press 'Q' to quit."
     Write-Host ""
@@ -949,13 +1143,13 @@ function DefaultOsWinMenu
      {
            '1' {Write-host "You chose option #1. VM '$RescueVmName' will be created from generation 1 Windows Server 2016 default image" -ForegroundColor green}
            '2' {Write-host "You chose option #2. VM '$RescueVmName' will be created from generation 1 Windows Server 2019 default image" -ForegroundColor green}
-           '3' {Write-host "You chose option #2. VM '$RescueVmName' will be created from generation 1 Windows Server 2022 default image" -ForegroundColor green}
+           '3' {Write-host "You chose option #3. Option not supported. Rescue VM cannot have the same OS version as the affected one" -ForegroundColor red}
 
      }
 
-   } until ($selection -eq '1' -or $selection -eq '2' -or $selection -eq '3' -or $selection -eq 'q')
+   } until ($selection -eq '1' -or $selection -eq '2' -or $selection -eq 'q')
 
-        if ($selection -eq 'q')
+           if ($selection -eq 'q')
 
          {
          Write-Host "Script will exit" -ForegroundColor Green
@@ -980,13 +1174,7 @@ function DefaultOsWinMenu
         $VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName $Win2019DefaultPublisher -Offer $Win2019DefaultOffer -Skus $Win2019DefaultSku -Version $Win2019DefaultVersion 
         }
 
-     if ($selection -eq "3") # Rescue VM will be created from Windows Server 2022 default image
-
-         {
-
-        #Set source Marketplace image Windows Server 2022
-        $VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName $Win2022DefaultPublisher -Offer $Win2022DefaultOffer -Skus $Win2022DefaultSku -Version $Win2022DefaultVersion 
-        }
+    }
 
 }
 
@@ -1260,48 +1448,100 @@ function DefaultOsOrMenu
 Write-Host ""
 Write-Host "Creating resources for VM '$RescueVmName'..."
 
-#Create a new Vnet
-$Vnet = New-AzVirtualNetwork -ResourceGroupName "$RescueVmRg" -Location $location -Name "$Vnetname" -AddressPrefix $VnetAddressPrefix
-
-#Add a subnet
-$subnetConfig = Add-AzVirtualNetworkSubnetConfig -Name $subnetName -AddressPrefix $SubnetAddressPrefix -VirtualNetwork $Vnet
-
-#Associate the subnet to the virtual network
-$Vnet | Set-AzVirtualNetwork | Out-Null
-$vnet = Get-AzVirtualNetwork -Name $Vnetname -ResourceGroupName $RescueVmRg
-
-# Check what is the operating system
-$WindowsOrLinux = $vm.StorageProfile.OsDisk.OsType
-
-if ($WindowsOrLinux -eq "Windows")
+If ($NewVnetAndSubnet)   # create new Vnet\Subnet
 {
+    # variables for the new resources
+    $Vnetname = ("VNET_" + $RescueVmName)
+    $RGofVNET = "$RescueVmRg"
+    $subnetName = "default"
+    $SubnetAddressPrefix = "10.0.0.0/24"
+    $VnetAddressPrefix = "10.0.0.0/16"
+    $NGSName = ("NSG_" + $RescueVmName)
+    $RGofNSG = "$RescueVmRg"
 
-#Create a detailed network security group (Allowing port 3389 and 443)
-$rule1 = New-AzNetworkSecurityRuleConfig -Name rdp-rule -Description "Allow RDP" -Access Allow -Protocol Tcp -Direction Inbound -Priority 100 -SourceAddressPrefix Internet -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 3389
-$rule2 = New-AzNetworkSecurityRuleConfig -Name web-rule1 -Description "Allow HTTP" -Access Allow -Protocol Tcp -Direction Inbound -Priority 101 -SourceAddressPrefix AzureCloud -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 443
-$rule3 = New-AzNetworkSecurityRuleConfig -Name web-rule2 -Description "Allow all outbound" -Access Allow -Protocol Tcp -Direction Outbound -Priority 100 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange *
-$nsg = New-AzNetworkSecurityGroup -ResourceGroupName "$RescueVmRg" -Location "$location" -Name "$NGSName" -SecurityRules $rule1,$rule2,$rule3
+    #Create a new Vnet
+    $Vnet = New-AzVirtualNetwork -ResourceGroupName "$RescueVmRg" -Location $location -Name "$Vnetname" -AddressPrefix $VnetAddressPrefix
+
+    #Add a subnet
+    $subnetConfig = Add-AzVirtualNetworkSubnetConfig -Name $subnetName -AddressPrefix $SubnetAddressPrefix -VirtualNetwork $Vnet
+
+    #Associate the subnet to the virtual network
+    $Vnet | Set-AzVirtualNetwork | Out-Null
+
+
+
+    $vnet = Get-AzVirtualNetwork -Name $Vnetname -ResourceGroupName $RescueVmRg
+
+    # Check what is the operating system
+    $WindowsOrLinux = $vm.StorageProfile.OsDisk.OsType
+
+    if($NsgRdpSshAllowRules)
+
+    {
+        if ($WindowsOrLinux -eq "Windows")
+        {
+
+        #Create a detailed network security group (Allowing port 3389 and 443)
+        $rule1 = New-AzNetworkSecurityRuleConfig -Name rdp-rule -Description "Allow RDP" -Access Allow -Protocol Tcp -Direction Inbound -Priority 100 -SourceAddressPrefix Internet -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 3389
+        $rule2 = New-AzNetworkSecurityRuleConfig -Name web-rule1 -Description "Allow HTTP" -Access Allow -Protocol Tcp -Direction Inbound -Priority 101 -SourceAddressPrefix AzureCloud -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 443
+        $rule3 = New-AzNetworkSecurityRuleConfig -Name web-rule2 -Description "Allow all outbound" -Access Allow -Protocol Tcp -Direction Outbound -Priority 100 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange *
+        $nsg = New-AzNetworkSecurityGroup -ResourceGroupName "$RescueVmRg" -Location "$location" -Name "$NGSName" -SecurityRules $rule1,$rule2,$rule3
+        }
+
+        if ($WindowsOrLinux -eq "Linux")
+        {
+        #Create a detailed network security group (Allowing port 3389 and 443)
+        $rule1 = New-AzNetworkSecurityRuleConfig -Name rdp-rule -Description "Allow SSH" -Access Allow -Protocol Tcp -Direction Inbound -Priority 100 -SourceAddressPrefix Internet -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 22
+        $rule2 = New-AzNetworkSecurityRuleConfig -Name web-rule1 -Description "Allow HTTP" -Access Allow -Protocol Tcp -Direction Inbound -Priority 101 -SourceAddressPrefix AzureCloud -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 443
+        $rule3 = New-AzNetworkSecurityRuleConfig -Name web-rule2 -Description "Allow all outbound" -Access Allow -Protocol Tcp -Direction Outbound -Priority 100 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange *
+        $nsg = New-AzNetworkSecurityGroup -ResourceGroupName "$RescueVmRg" -Location "$location" -Name "$NGSName" -SecurityRules $rule1,$rule2,$rule3
+
+        }
+
+    }
+    If ($associatepublicip)
+    {
+    #Create new Public IP
+    $PublicIPName = ("PublicIP_" + $RescueVmName)
+    $pip = New-AzPublicIpAddress -Name $PublicIPName -ResourceGroupName $RescueVmRg -Location $location -AllocationMethod Static
+    }
+
+    #Create new Nic
+    $nic = New-AzNetworkInterface -Name $nicName -ResourceGroupName $nicRGName -Location $location -SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id
 }
 
-if ($WindowsOrLinux -eq "Linux")
+if ($VnetName)  # use existing Vnet\Subnet
+
 {
-#Create a detailed network security group (Allowing port 3389 and 443)
-$rule1 = New-AzNetworkSecurityRuleConfig -Name rdp-rule -Description "Allow SSH" -Access Allow -Protocol Tcp -Direction Inbound -Priority 100 -SourceAddressPrefix Internet -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 22
-$rule2 = New-AzNetworkSecurityRuleConfig -Name web-rule1 -Description "Allow HTTP" -Access Allow -Protocol Tcp -Direction Inbound -Priority 101 -SourceAddressPrefix AzureCloud -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 443
-$rule3 = New-AzNetworkSecurityRuleConfig -Name web-rule2 -Description "Allow all outbound" -Access Allow -Protocol Tcp -Direction Outbound -Priority 100 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange *
-$nsg = New-AzNetworkSecurityGroup -ResourceGroupName "$RescueVmRg" -Location "$location" -Name "$NGSName" -SecurityRules $rule1,$rule2,$rule3
+
+    # Get existing resources:
+
+    #Get existing Vnet
+    $Vnet = Get-AzVirtualNetwork -Name "$Vnetname" -ResourceGroupName "$VnetRG"
+
+    #Get existing Subnet
+    $Subnet = Get-AzVirtualNetworkSubnetConfig -Name $subnetName -VirtualNetwork $vnet
+
+    if ($NicNsgName)
+    {
+        #Get existing NSG
+        $NSG = Get-AzNetworkSecurityGroup -Name "$NicNsgName" -ResourceGroupName "$NicNsgRG"
+    }
+
+    #Create new Public IP
+     If ($associatepublicip)
+        {
+        #Create new Public IP
+        $PublicIPName = ("PublicIP_" + $RescueVmName)
+        $pip = New-AzPublicIpAddress -Name $PublicIPName -ResourceGroupName $RescueVmRg -Location $location -AllocationMethod Static
+        }
+
+    #Create new Nic
+    $nic = New-AzNetworkInterface -Name $nicName -ResourceGroupName $nicRGName -Location $location -SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id
 
 }
 
-If ($associatepublicip)
-{
-#Create new Public IP
-$PublicIPName = ("PublicIP_" + $RescueVmName)
-$pip = New-AzPublicIpAddress -Name $PublicIPName -ResourceGroupName $RescueVmRg -Location $location -AllocationMethod Static
-}
 
-#Create new Nic
-$nic = New-AzNetworkInterface -Name $nicName -ResourceGroupName $nicRGName -Location $location -SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id
 
 #Add NIC to vmconfig
 $VirtualMachine = Add-AzVMNetworkInterface -VM $VirtualMachine -Id $nic.Id
@@ -1322,6 +1562,7 @@ $VirtualMachine = Set-AzVMOSDisk -VM $VirtualMachine -StorageAccountType "Standa
 $datadisk = Get-AzDisk -ResourceGroupName $RescueVmRg -DiskName $CopyDiskName
 $DiskSizeInGB = $datadisk.DiskSizeGB
 Add-AzVMDataDisk -VM $VirtualMachine -ManagedDiskId $datadisk.Id -Name $CopyDiskName -Caching None -DiskSizeInGB $DiskSizeInGB -Lun 0 -CreateOption Attach | Out-Null
+
 }
 
 # For UnManaged disks
@@ -1347,24 +1588,30 @@ $VirtualMachine = Set-AzVMOSDisk -VM $VirtualMachine -Name $OSDiskName -VhdUri $
  
  if ($WindowsOrLinux -eq "Windows")
 {
-    if ($TagName1 -ne $null -or $TagName2 -ne $null -or $TagName3 -ne $null -or $TagName4 -ne $null -or $TagName5 -ne $null)
+    if ($TagName1 -or $TagName2 -or $TagName3 -or $TagName4 -or $TagName5)
     { # Add tags during VM creation
     New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine -Tag $tags -DisableBginfoExtension | Out-Null
     }
 
+    if (!$TagName1 -or !$TagName2 -or !$TagName3 -or !$TagName4 -or !$TagName5)
+    {
     # Create the VM without tags
     New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine -DisableBginfoExtension | Out-Null
+    }
 }
 
 if ($WindowsOrLinux -eq "Linux")
 {
-    if ($TagName1 -ne $null -or $TagName2 -ne $null -or $TagName3 -ne $null -or $TagName4 -ne $null -or $TagName5 -ne $null)
+    if ($TagName1 -or $TagName2 -or $TagName3 -or $TagName4 -or $TagName5)
     { # Add tags during VM creation
     New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine -Tag $tags | Out-Null
     }
 
+    if (!$TagName1 -or !$TagName2 -or !$TagName3 -or !$TagName4 -or !$TagName5)
+    {
     # Create the VM without tags
     New-AzVM -ResourceGroupName $RescueVmRg -Location $location -VM $VirtualMachine | Out-Null
+    }
 }
 
 #Wait until VM guest agent becomes ready
@@ -1374,21 +1621,31 @@ $VMagentStatus = (Get-AzVM -ResourceGroupName $RescueVmRg -Name $RescueVmName -S
 } until ($VMagentStatus -eq "Ready")
 
 
+
+#############################################################
+#   Store Rescue Vm and Impacted VM objects in a variables  #
+#############################################################
+
+$vm = Get-AzVm -ResourceGroupName $VMRgName -Name $vmName
+$RescueVMObject = Get-AzVM -ResourceGroupName $RescueVmRg -Name $RescueVmName
+
+
 ##############################################################################
 #                   Copy encryption settings to the rescue VM                #
 ##############################################################################
 
-$vm = Get-AzVm -ResourceGroupName $VMRgName -Name $vmName
-$RescueVMObject = Get-AzVM -ResourceGroupName $RescueVmRg -Name $RescueVmName
 
 Write-Host ""
 Write-Host "Copying encryption settings from VM '$VmName' to VM '$RescueVmName'..."
 $RescueVMObject.StorageProfile.OsDisk.EncryptionSettings = $vm.StorageProfile.OsDisk.EncryptionSettings
 
-Write-Host ""
-Write-Host "Updating and restarting Rescue VM '$RescueVmName'..."   
-$RescueVMObject| Update-AzVM | Out-Null # the update operation will restart VM
+###############################################################################
+#       Updating rescue VM to apply changes with the ecryption settings       #
+###############################################################################
 
+Write-Host ""
+Write-Host "Updating and restarting Rescue VM '$RescueVmName' for applying changes..."   
+$RescueVMObject| Update-AzVM | Out-Null # the update operation will restart VM
 
 #Wait until VM guest agent becomes ready
 do {
@@ -1664,6 +1921,9 @@ If ($enablenested)
 
         ( 'New-VM -Name ' + '$HypervVMName' + ' -Generation 1 -MemoryStartupBytes 4GB -NoVHD') >> $PathScriptEnableNested
 
+        ( 'Set-VM -name ' + '$HypervVMName' + ' -ProcessorCount 2') >> $PathScriptEnableNested
+
+
         #Removing DVD drive
         ( '#Removing DVD drive') >> $PathScriptEnableNested
 
@@ -1771,7 +2031,7 @@ Write-host "Unlocking attached disk..."
 
 $ProgressPreference = 'SilentlyContinue'
 $PathScriptUnlockAndMountDisk = "$home/linux-mount-encrypted-disk.sh"
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/azure-cli-extensions/main/src/vm-repair/azext_vm_repair/scripts/linux-mount-encrypted-disk.sh" -OutFile $PathScriptUnlockAndMountDisk | Out-Null
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gabriel-petre/ADE/main/Create_Rescue_VM_from_DualPass_Encrypted_Vm/src/linux-mount-encrypted-disk.sh" -OutFile $PathScriptUnlockAndMountDisk | Out-Null
 
 # Invoke the command on the VM, using the local file
 Invoke-AzVMRunCommand -Name $RescueVmName -ResourceGroupName $RescueVmRg -CommandId 'RunShellScript' -ScriptPath $PathScriptUnlockAndMountDisk | Out-Null
