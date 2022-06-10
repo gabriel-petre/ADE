@@ -529,6 +529,7 @@ $import = Get-Content $json_fullpath -Raw | ConvertFrom-Json -ErrorAction Stop
 
 #Check if we can find AD App ID used in previous encryption process from existing JSON file
 $AADClientID = $import.Extensions.Settings.AADClientID
+$AADClientID = "$AADClientID"
 
 if ($AADClientID -eq $null)
     {$ErrorRetrievingAppID = $true}
@@ -848,15 +849,18 @@ if($null -eq $import.StorageProfile.OsDisk.Vhd) #if this is null, then the disk 
 
 #check if disk is attached to a vm
 $DiskAttachedToVM = (Get-AzDisk -ResourceGroupName $OSDiskRg -DiskName $OSDiskName).ManagedBy
-$VmNameWhereDiskIsAttached = $DiskAttachedToVM.Split("/")
-$VmNameWhereDiskIsAttached = $VmNameWhereDiskIsAttached[8]
 
-Write-Host ""
-Write-Host "Disk '$OSDiskName' is attached to VM '$VmNameWhereDiskIsAttached'" -ForegroundColor Yellow
+if ($DiskAttachedToVM -ne $null)
+    {
+    $VmNameWhereDiskIsAttached = $DiskAttachedToVM.Split("/")
+    $VmNameWhereDiskIsAttached = $VmNameWhereDiskIsAttached[8]
 
-$VmWhereDiskIsAttachedObject = Get-AzVM | ?{$_.Name -eq $VmNameWhereDiskIsAttached}
-$OSDiskOfFoundVM = $VmWhereDiskIsAttachedObject.StorageProfile.OsDisk.Name
+    Write-Host ""
+    Write-Host "Disk '$OSDiskName' is attached to VM '$VmNameWhereDiskIsAttached'" -ForegroundColor Yellow
 
+    $VmWhereDiskIsAttachedObject = Get-AzVM | ?{$_.Name -eq $VmNameWhereDiskIsAttached}
+    $OSDiskOfFoundVM = $VmWhereDiskIsAttachedObject.StorageProfile.OsDisk.Name
+    }
 }
 
 # For UnManaged disks
@@ -2539,7 +2543,7 @@ Write-Host ""
     Write-Host ""
 
         # waiting for the VM agent to become ready since encryption will not be able to start without the VM agent in a ready state
-        $MinutesToWait = "5"
+        $MinutesToWait = "10"
         $TimeStart = Get-Date
         $TimeEnd = $TimeStart.addminutes($MinutesToWait)
         Write-Host "Waiting for the VM agent to become ready or the script will stop after $MinutesToWait minutes since encryption will not be able to start without the VM agent in a ready state..."
