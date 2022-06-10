@@ -93,8 +93,8 @@ data_os_lvm_check () {
 	echo ${lvm_part} >> ${logpath}/${logfile}
 	if [ -z ${lvm_part} ]
 	then
-		#Updaing the below command to use lsblk instead of fdisk for accounting for different distros
-		export root_part=`fdisk -l ${data_disk} 2>&1 | grep ^/ |awk '$4 > 60000000{print $1}'` >> ${logpath}/${logfile}
+		#Updating the below command to use lsblk instead of fdisk for accounting for different distros
+		#export root_part=`fdisk -l ${data_disk} 2>&1 | grep ^/ |awk '$4 > 60000000{print $1}'` >> ${logpath}/${logfile}
 		export root_part=`lsblk ${data_disk} -l -n -p 2>&1 | grep -w -v ${data_disk} |awk '$4 > 60000000{print $1}'` >> ${logpath}/${logfile}
 		echo "`date` LVM not found on the data disk" >> ${logpath}/${logfile}
 		echo "`date` The OS partition on the data drive is ${root_part}" >> ${logpath}/${logfile}
