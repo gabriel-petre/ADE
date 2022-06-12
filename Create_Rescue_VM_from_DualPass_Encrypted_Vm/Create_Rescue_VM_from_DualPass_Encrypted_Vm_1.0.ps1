@@ -8,7 +8,7 @@
    [Parameter(Mandatory = $true)] [String] $RescueVmUserName,
    [Parameter(Mandatory = $true)] [String] $RescueVmPassword,
    [Parameter(Mandatory = $true)] [String] $SubscriptionID,
-   [Parameter(Mandatory = $false)] [String] $NewVnetAndSubnet,
+   [Parameter(Mandatory = $false)] [switch] $NewVnetAndSubnet,
    [Parameter(Mandatory = $false)] [String] $VnetName,
    [Parameter(Mandatory = $false)] [String] $SubnetName,
    [Parameter(Mandatory = $false)] [String] $VnetRG,
