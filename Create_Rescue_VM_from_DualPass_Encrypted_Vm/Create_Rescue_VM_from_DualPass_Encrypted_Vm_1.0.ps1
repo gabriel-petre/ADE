@@ -48,6 +48,7 @@ Write-Host ""
 #Write-Host "Disabling warning messages to users that the cmdlets used in this script may be changed in the future." -ForegroundColor Yellow
 Set-Item Env:\SuppressAzurePowerShellBreakingChangeWarnings "true"
 
+
 ################################################################################################################
 #   Verifying if TagName and TagValue switch was specified and building tag array to add tag on the rescue VM  #
 ################################################################################################################
