@@ -14,7 +14,7 @@
    [Parameter(Mandatory = $false)] [String] $VnetRG,
    [Parameter(Mandatory = $false)] [String] $NicNsgName,
    [Parameter(Mandatory = $false)] [String] $NicNsgRG,
-   [Parameter(Mandatory = $false)] [String] $NsgRdpSshAllowRules,
+   [Parameter(Mandatory = $false)] [switch] $NsgRdpSshAllowRules,
    [Parameter(Mandatory = $false)] [switch] $associatepublicip,
    [Parameter(Mandatory = $false)] [switch] $enablenested,
    [Parameter(Mandatory = $false)] [String] $TagName1,
@@ -1510,7 +1510,7 @@ If ($NewVnetAndSubnet)   # create new Vnet\Subnet
     $nic = New-AzNetworkInterface -Name $nicName -ResourceGroupName $nicRGName -Location $location -SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id
 }
 
-if ($VnetName)  # use existing Vnet\Subnet
+if ($VnetName -eq $null)  # use existing Vnet\Subnet
 
 {
 
