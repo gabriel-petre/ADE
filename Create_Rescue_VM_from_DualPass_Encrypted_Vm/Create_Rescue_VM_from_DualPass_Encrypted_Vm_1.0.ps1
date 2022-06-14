@@ -1511,7 +1511,7 @@ If ($NewVnetAndSubnet)   # create new Vnet\Subnet
     $nic = New-AzNetworkInterface -Name $nicName -ResourceGroupName $nicRGName -Location $location -SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id
 }
 
-if ($VnetName -eq $null)  # use existing Vnet\Subnet
+if ($VnetName -ne $null)  # use existing Vnet\Subnet
 
 {
 
