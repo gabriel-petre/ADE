@@ -1,0 +1,145 @@
+ Param (
+
+   [Parameter(Mandatory = $true)] [Array] $DCs,
+   [Parameter(Mandatory = $true)] [Array] $DNSServers  
+) 
+###############################################################################################################################
+#VARIABLES
+
+<#Get Domain controllers
+$DomainName = (gwmi WIN32_ComputerSystem).Domain
+$DCs = netdom query /d:$DomainName DC
+$DCs = $DCs | select -skip 2 | select -skiplast 2
+
+
+$DCs = @("10.0.0.4","10.0.0.5")
+$DNSServers = @("10.0.0.4","10.0.0.5")
+#>
+
+
+#Get DNS servers configured on NICs 
+$interfaces = (Get-DnsClientServerAddress -AddressFamily IPv4).InterfaceAlias 
+$DNSServers = foreach ($interface in $interfaces) {(Get-DnsClientServerAddress -InterfaceAlias $interface -AddressFamily IPv4).ServerAddresses}
+
+# Get Domain Name:
+$DomainName = (gwmi win32_computersystem).domain
+
+#Port to check
+$portsToCheck = ("53", "88", "137", "139", "389", "445", "464", "3268", "636", "3269")
+
+$localhost = hostname
+
+# Output to console variables
+Write-Host "Details:"
+Write-Host "Domain Name: $DomainName"
+Write-Host "Domain Controllers: $DCs"
+Write-Host "DNS Servers configured on the NIC: $DNSServers"
+
+#Start Testing
+Write-Host ""
+Write-Host "Start testing.."
+
+###############################################################################################################################
+# Ping all domain controllers
+Write-Host ""
+Write-Host "Ping reply for all domain controllers" -ForegroundColor Green
+
+
+foreach ($DC in $DCs)
+{
+$error.clear()
+    try{
+        Test-Connection $DC -Count 1 -ErrorAction SilentlyContinue
+        }
+    catch {}
+if ($Error)
+    {
+    #Write-Host "No ping reply from $DNSServer. Check network connectivity" -ForegroundColor Red
+    }
+    $error.clear()
+}
+
+
+###############################################################################################################################
+# Testing Computer Secure Channel
+Write-Host ""
+Write-Host "Testing secure channel between the local computer and the domain..."
+
+$ResultComputerSecureChannel = Test-ComputerSecureChannel -verbose  -ErrorAction SilentlyContinue
+
+<#
+if ($ResultComputerSecureChannel -eq $true)
+    {
+    Write-Host "The secure channel between the local computer and the domain $DomainName is in good condition." -ForegroundColor Green
+    }
+if ($ResultComputerSecureChannel -eq $false)
+    {
+    Write-Host "The secure channel between the local computer and the domain $DomainName cannot be verified. Check network connectivity" -ForegroundColor Red
+    }
+#>
+###############################################################################################################################
+# Testing connectivity to Domain controllers
+
+Write-Host ""
+Write-Host "Testing outbound connectivity from server '$localhost' to Domain Controllers on ports: $portsToCheck..." 
+Write-Host ""
+
+foreach ($DC in $DCs)
+
+{
+ $ReachablePorts = @()
+ $UnreachablePorts = @()
+
+ foreach ($port in $portsToCheck) 
+ {
+
+ $result = (New-Object System.Net.Sockets.TcpClient).ConnectAsync($DC, $Port).Wait(300)
+
+    if ($result -eq $true)
+    {
+    $ReachablePorts += $port
+    }
+    else 
+    {
+    $UnreachablePorts += $port
+    }
+ }
+Write-Host "Domain controler: $DC"
+Write-Host "Reachable ports: $ReachablePorts" -ForegroundColor green
+Write-Host "Unreachable ports: $UnreachablePorts" -ForegroundColor Red
+Write-Host ""
+ }
+
+###############################################################################################################################
+#Testing conectivity with DNS servers and name resolution
+Write-Host ""
+Write-Host "Testing for DCs Name resolution..." 
+
+$FinalResultDNS = @()
+$i = 1
+$DNSServer = $DNSServers | select -First $i
+
+foreach ($DC in $DCs) 
+{
+$tempObjDNS = "" | Select-Object DNSNameThatWasResolved,ResolvedIPAddress,DNSServerWhoResolved,Status,ErrorMessage    
+       try {
+        $dnsRecord = Resolve-DnsName $DC -Server $DNSServer -ErrorAction Stop | Where-Object {$_.Type -eq 'A'}
+        $tempObjDNS.DNSNameThatWasResolved = $DC
+        $tempObjDNS.ResolvedIPAddress = ($dnsRecord.IPAddress -join ',') 
+        $tempObjDNS.DNSServerWhoResolved = $DNSServer 
+        $tempObjDNS.Status = 'OK'
+        $tempObjDNS.ErrorMessage = '' 
+        $DNSServer = $DNSServers | Select-Object -Last $i 
+        }
+            
+    catch {
+            $tempObjDNS.DNSNameThatWasResolved = $DC
+            $tempObjDNS.DNSServerWhoResolved = $DNSServer
+            $tempObjDNS.ResolvedIPAddress = ''
+            $tempObjDNS.Status = 'NOT_OK'
+            $tempObjDNS.ErrorMessage = $_.Exception.Message
+            }  
+  $FinalResultDNS += $tempObjDNS
+   }
+
+return $FinalResultDNS
