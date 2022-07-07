@@ -1798,11 +1798,9 @@ Write-host "Unlocking attached disk..."
 
 # Downloading the unlock script for Linux VMs in $HOME directory of cloud drive and run it on the rescue VM to unlock disk
 
-if ($BrokenVMPublisher -eq "Redhat")
-{
 
-$PathScriptUnlockAndMountDisk = "$home/linux-mount-encrypted-disk-redhat.sh"
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gabriel-petre/ADE/main/Create_Rescue_VM_from_DualPass_Encrypted_Vm/src/linux-mount-encrypted-disk-redhat.sh" -OutFile $PathScriptUnlockAndMountDisk | Out-Null
+$PathScriptUnlockAndMountDisk = "$home/linux-mount-encrypted-disk-2.sh"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gabriel-petre/ADE/main/Create_Rescue_VM_from_DualPass_Encrypted_Vm/src/linux-mount-encrypted-disk-2.sh" -OutFile $PathScriptUnlockAndMountDisk | Out-Null
 
 # Invoke the command on the VM, using the local file
 Invoke-AzVMRunCommand -Name $RescueVmName -ResourceGroupName $RescueVmRg -CommandId 'RunShellScript' -ScriptPath $PathScriptUnlockAndMountDisk | Out-Null
@@ -1814,27 +1812,8 @@ Write-Host ""
 Write-host "You can SSH to the Rescue VM"
 
 #removing all used scripst from Azure Cloud Drive
-Remove-Item $PathScriptUnlockAndMountDisk
-}
+#Remove-Item $PathScriptUnlockAndMountDisk
 
-if ($BrokenVMPublisher -eq "Canonical" -or $BrokenVMPublisher -eq "OpenLogic")
-{
-
-$PathScriptUnlockAndMountDisk = "$home/linux-mount-encrypted-disk-ubuntu-centos.sh"
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gabriel-petre/ADE/main/Create_Rescue_VM_from_DualPass_Encrypted_Vm/src/linux-mount-encrypted-disk-ubuntu-centos.sh" -OutFile $PathScriptUnlockAndMountDisk | Out-Null
-
-# Invoke the command on the VM, using the local file
-Invoke-AzVMRunCommand -Name $RescueVmName -ResourceGroupName $RescueVmRg -CommandId 'RunShellScript' -ScriptPath $PathScriptUnlockAndMountDisk | Out-Null
-
-Write-Host ""
-Write-host "Rescue VM was successfully configured and created" -ForegroundColor green
-
-Write-Host ""
-Write-host "You can SSH to the Rescue VM"
-
-#removing all used scripst from Azure Cloud Drive
-Remove-Item $PathScriptUnlockAndMountDisk
-}
 
 # Calculate elapsed time
 $EndTimeMinute = (Get-Date).Minute
