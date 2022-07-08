@@ -93,25 +93,16 @@ data_os_lvm_check () {
 	echo ${lvm_part} >> ${logpath}/${logfile}
 	if [ -z ${lvm_part} ]
 	then
-	
-		os="$(grep '^NAME' /etc/os-release)"
-		if [[ $os == *"Red Hat"* ]]; then
-		os=RedHat
-		echo $os
-		#export root_part=`lsblk ${data_disk} -l -n -p 2>&1 | grep -w -v ${data_disk} |awk '$4 > 60000000{print $1}'` >> ${logpath}/${logfile}
-		export root_part=`fdisk -l ${data_disk} 2>&1 | grep ^/ |awk '$4 > 60000000{print $1}'` >> ${logpath}/${logfile}
-		
-		elif [[ $os == *"Ubuntu"* ]]; then
-		os=Ubuntu
-		echo $os
-		export root_part=`fdisk -l ${data_disk} 2>&1 | grep ^/ |awk '$4 > 60000000{print $1}'` >> ${logpath}/${logfile}
+		#RedHat
+		export root_part=`lsblk ${data_disk} -l -n -p 2>&1 | grep -w -v ${data_disk} |awk '$4 > 60000000{print $1}'`  
 
-		elif [[ $os == *"CentOS"* ]]; then
-		os=CentOS
-		echo $os
-		export root_part=`fdisk -l ${data_disk} 2>&1 | grep ^/ |awk '$4 > 60000000{print $1}'` >> ${logpath}/${logfile}
+		if [ -z "$root_part" ]; then
+
+		#Ubuntu and CentOS
+		export root_part=`fdisk -l ${data_disk} 2>&1 | grep ^/ |awk '$4 > 60000000{print $1}'` 
+		echo $root_part
 		fi
-	
+		
 		echo "`date` LVM not found on the data disk" >> ${logpath}/${logfile}
 		echo "`date` The OS partition on the data drive is ${root_part}" >> ${logpath}/${logfile}
 	else
