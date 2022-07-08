@@ -98,8 +98,9 @@ data_os_lvm_check () {
 		if [[ $os == *"Red Hat"* ]]; then
 		os=RedHat
 		echo $os
-		export root_part=`lsblk ${data_disk} -l -n -p 2>&1 | grep -w -v ${data_disk} |awk '$4 > 60000000{print $1}'` >> ${logpath}/${logfile}
-
+		#export root_part=`lsblk ${data_disk} -l -n -p 2>&1 | grep -w -v ${data_disk} |awk '$4 > 60000000{print $1}'` >> ${logpath}/${logfile}
+		export root_part=`fdisk -l ${data_disk} 2>&1 | grep ^/ |awk '$4 > 60000000{print $1}'` >> ${logpath}/${logfile}
+		
 		elif [[ $os == *"Ubuntu"* ]]; then
 		os=Ubuntu
 		echo $os
