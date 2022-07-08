@@ -1896,8 +1896,8 @@ Write-host "Unlocking attached disk..."
 # Downloading the unlock script for Linux VMs in $HOME directory of cloud drive and run it on the rescue VM to unlock disk
 
 
-$PathScriptUnlockAndMountDisk = "$home/linux-mount-encrypted-disk-2.sh"
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gabriel-petre/ADE/main/Create_Rescue_VM_from_DualPass_Encrypted_Vm/src/linux-mount-encrypted-disk-2.sh" -OutFile $PathScriptUnlockAndMountDisk | Out-Null
+$PathScriptUnlockAndMountDisk = "$home/linux-mount-encrypted-disk.sh"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gabriel-petre/ADE/main/Create_Rescue_VM_from_DualPass_Encrypted_Vm/src/linux-mount-encrypted-disk.sh" -OutFile $PathScriptUnlockAndMountDisk | Out-Null
 
 # Invoke the command on the VM, using the local file
 Invoke-AzVMRunCommand -Name $RescueVmName -ResourceGroupName $RescueVmRg -CommandId 'RunShellScript' -ScriptPath $PathScriptUnlockAndMountDisk | Out-Null
