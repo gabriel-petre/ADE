@@ -1909,7 +1909,7 @@ Write-Host ""
 Write-host "You can SSH to the Rescue VM"
 
 #removing all used scripst from Azure Cloud Drive
-#Remove-Item $PathScriptUnlockAndMountDisk
+Remove-Item $PathScriptUnlockAndMountDisk
 
 
 # Calculate elapsed time
