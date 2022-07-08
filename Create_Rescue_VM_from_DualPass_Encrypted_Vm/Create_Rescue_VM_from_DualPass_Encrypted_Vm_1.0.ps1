@@ -943,7 +943,10 @@ Write-Host "Operating system is Windows"
 #Set Hostname and Credentials
 $VirtualMachine = Set-AzVMOperatingSystem -VM $vmConfig -Windows -ComputerName "$HostnameRescueVM" -Credential $Credential -ProvisionVMAgent
 
-$BrokenVMSKU = $vm.StorageProfile.ImageReference.Sku
+$BrokenVMPublisher = $vm.StorageProfile.ImageReference.Publisher
+$BrokenVMOffer = $vm.StorageProfile.ImageReference.Offer
+$BrokenVMSku = $vm.StorageProfile.ImageReference.Sku
+
 
 if ($BrokenVMSKU -like "*2016-Datacenter*")
     {
@@ -1179,6 +1182,100 @@ if ($BrokenVMSKU -like "*2022-Datacenter*")
         }
 
     }
+
+if ($BrokenVMPublisher -eq $null)
+
+{
+
+    #Windows Server 2016
+    $Win2016DefaultPublisher = "MicrosoftWindowsServer"
+    $Win2016DefaultOffer = "WindowsServer"
+    $Win2016DefaultSku = "2016-Datacenter"
+    $Win2016DefaultVersion = "latest"
+    #$Win2016DefaultVersion = "14393.4350.2104091630" # Tested Versions: "14393.4350.2104091630", "14393.5066.220403"
+
+    #Windows Server 2019
+    $Win2019DefaultPublisher = "MicrosoftWindowsServer"
+    $Win2019DefaultOffer = "WindowsServer"
+    $Win2019DefaultSku = "2019-Datacenter"
+    $Win2019DefaultVersion = "latest"
+
+    #Windows Server 2022
+    $Win2022DefaultPublisher = "MicrosoftWindowsServer"
+    $Win2022DefaultOffer = "WindowsServer"
+    $Win2022DefaultSku = "2022-Datacenter"
+    $Win2022DefaultVersion = "latest"
+
+    function DefaultOsWinMenu
+    {
+    param (
+        [string]$Title = 'Image selection Menu for creating Rescue VM'
+    )
+
+    Write-Host "========================================================================================== $Title ============================================================================"
+    Write-Host ""
+    Write-Host "The SKU of the VM '$VmName' cannot be automatically retrieved. Please make sure you select a different SKU for the Rescue VM than the one of VM '$VmName' from bellow".
+    Write-Host ""
+    Write-Host "1: Create VM '$RescueVmName' from generation 1 Windows Server 2016 default image"
+    Write-Host ""
+    Write-Host "2: Create VM '$RescueVmName' from generation 1 Windows Server 2019 default image"
+    Write-Host ""
+    Write-Host "3: Create VM '$RescueVmName' from generation 1 Windows Server 2022 default image"
+    Write-Host ""
+    Write-Host "Q: Press 'Q' to quit."
+    Write-Host ""
+    Write-Host "==================================================================================================================================================================================================================="
+
+    }
+
+     do{
+     Write-Host ""
+     #call 'DefaultOsWinMenu' function
+     DefaultOsWinMenu
+     $selection = Read-Host "Please make a selection"
+     Write-Host ""
+     switch ($selection)
+     {
+           '1' {Write-host "You chose option #1. VM '$RescueVmName' will be created from generation 1 Windows Server 2016 default image" -ForegroundColor green}
+           '2' {Write-host "You chose option #2. VM '$RescueVmName' will be created from generation 1 Windows Server 2019 default image" -ForegroundColor green}
+           '3' {Write-host "You chose option #3. VM '$RescueVmName' will be created from generation 1 Windows Server 2022 default image" -ForegroundColor green}
+
+     }
+
+   } until ($selection -eq '1' -or $selection -eq '2' -or $selection -eq '3' -or $selection -eq 'q')
+
+         if ($selection -eq 'q')
+
+         {
+         Write-Host "Script will exit" -ForegroundColor Green
+         Write-Host ""
+         exit
+         }
+   
+         if ($selection -eq "1") # Rescue VM will be created from Windows Server 2019 default image
+
+         {
+
+        #Set source Marketplace image Windows Server 2016
+        $VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName $Win2016DefaultPublisher -Offer $Win2016DefaultOffer -Skus $Win2016DefaultSku -Version $Win2016DefaultVersion 
+        }
+
+        if ($selection -eq "2") # Rescue VM will be created from Windows Server 2019 default image
+
+         {
+
+        #Set source Marketplace image Windows Server 2019
+        $VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName $Win2019DefaultPublisher -Offer $Win2019DefaultOffer -Skus $Win2019DefaultSku -Version $Win2019DefaultVersion 
+        }
+
+     if ($selection -eq "3") # Rescue VM will be created from Windows Server 2022 default image
+
+         {
+
+        #Set source Marketplace image Windows Server 2022
+        $VirtualMachine = Set-AzVMSourceImage -VM $vmConfig -PublisherName $Win2022DefaultPublisher -Offer $Win2022DefaultOffer -Skus $Win2022DefaultSku -Version $Win2022DefaultVersion 
+        }
+}
 
 }
 
