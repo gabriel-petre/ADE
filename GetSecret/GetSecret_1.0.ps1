@@ -4,62 +4,71 @@
 
 <# 
 =======================================================================
-What this script does: 
+How to run the PowerShell script:
+•	When used on a windows VM (local):
+    o	./GetSecret_1.0.ps1 -Mode "local" -subscriptionId "sub ID" -DiskName "Encryppted disk name"
+    o	./GetSecret_1.0.ps1 -Mode "local" -subscriptionId " sub ID " -DiskName " Encryppted disk name " -SecretVersion "Secret version"
 
-1. Checks if prerequisites are installed. If not, it will download and install or making other adjustments for the prerequisites to be met
-2. Authenticates you to your selected subscription
-3. Unlocks an encrypted disk 
+•	When used from Cloud Shell:
+    o	./GetSecret_1.0.ps1 -Mode "cloudshell" -subscriptionId "sub ID" -DiskName "Encryppted disk name"
+    o./GetSecret_1.0.ps1 -Mode " cloudshell " -subscriptionId " sub ID " -DiskName " Encryppted disk name " -SecretVersion "Secret version"
 
-=======================================================================
-Requirements:
+What it does:
+    1.	Checks if prerequisites are installed. If they aren't, it will install them. (Only for "local" scenario)
+        Prerequisites required:
+        •	Az.Compute Powershell module
+        •	Az.Resources Powershell module
+        •	Az.KeyVault Powershell module
+        •	Az.Storage Powershell module
+        •	.Net 4.7.2 (or higher)
+        •	"NuGet" PackageProvider (MinimumVersion 2.8.5.201)
+    2.	Display the encryption settings for future use.
+    3.	check if the current user has the proper permissions and if not, it will assign those permissions (supports both of available permissions model: Access policy or RBAC)
+    4.	Finds the proper secret that was used originally to encrypt the disk.
+    5.	Downloads that secret which was used to originally encrypt the disk to the working directory.
+    6.	Unlocks the disk (only for "local" scenario)
 
-VM from which you are running the script, needs to have internet access
+Troubleshooting Scenarios when the script can be used (not limited to the ones bellow):
+    •	When can script be used locally:
+    When cx cannot create a new VM due to cost, permissions, does not have access to cloud shell or complexity of the operation, but already has an existing VM with internet access that he can use.
+    •	When can script be used in cloud shell:
+    When cx cannot create a new VM due to cost, permissions, does not have access to cloud shell, complexity of the operation or does not have an existing VM or exiting VM with internet access that he can use.
 
-=======================================================================
-Limitations:
+Advantages:
+•	This PowerShell script was designed to be used from locally or from Azure cloud shell, to eliminate the need of PowerShell prerequisites needed in the manual process and which caused delays or additional issues due to the diversity of environments in terms of PowerShell version, OS version, user permissions, internet connectivity etc.
+•	The duration for this process using this script is an average of 3 minutes, which is far more less than the manual process which can take hours depending on the complexity of scenarios, environment variables, customer limitations, level of expertise.
+•	Reduced risk of human errors in gathering and using encryption settings
+•	No internet access is required on the Rescue VM which is useful for users with restricted environments if it is used from azure Cloud Shell
+•	Insignificant number of initial input data needed to run this script.
+•	Additional checks during this process to reduce or prevent the risk of a script failure due to the variety of environments.
+•	Additional explanatory details are offered during the process, which helps the user to learn theoretical aspects along the way.
+•	Error handling for the most common errors in terms of auto-resolving or guidance for the manual process of resolving the issue.
+•	Offers the possibility of using the script multiple times if the troubleshooting scenario requires this.
 
-If your user account is enabled for Azure AD Multi-Factor Authentication, Microsoft doesn't currently support using the Azure Active Directory Module for Windows PowerShell to connect to Azure AD.
+Supported scenarios: 
+•	Retrieve secrets (BEK or KEK) for encrypted with Single Pass managed disks (OS or data), with Windows or Linux as the operating system (gen 1 or gen 2)
 
-To perform administrative tasks by using the Azure Active Directory Module for Windows PowerShell, use either of the following methods:
+Unsupported scenarios:
+•	For Windows:
+    o	Retrieve secrets (BEK or KEK) for encrypted with Single Pass unmanaged disks (OS or data), with Windows as the operating system (gen 1 or gen 2)
+    o	Retrieve secrets (BEK or KEK) for encrypted with Dual Pass managed disks (OS or data), with Windows as the operating system (gen 1 or gen 2)
+    o	Retrieve secrets (BEK or KEK) for encrypted with Dual Pass unmanaged disks (OS or data) with Windows as the operating system (gen 1 or gen 2)
+•	For Linux:
+    o	Retrieve secrets (BEK or KEK) for encrypted with Single Pass unmanaged disks (OS or data), with Linux as the operating system (gen 1 or gen 2)
+    o	Retrieve secrets (BEK or KEK) for encrypted with Dual Pass managed disks (OS or data), with Linux as the operating system (gen 1 or gen 2)
+    o	Retrieve secrets (BEK or KEK) for encrypted with Dual Pass unmanaged disks (OS or data), with Linux as the operating system (gen 1 or gen 2)
 
-Disable Azure Active Directory Multi-Factor Authentication for the user account.
-Use a different admin account that isn't enabled for Azure Active Directory Multi-Factor Authentication.
+    Requirements:
+    •	If run locally, VM from which you are running the script, needs to have internet access.
+    •	If run from Azure Cloud Shell, user needs access to Azure Cloud Shell
+    •	The user needs to have access to assign the proper permissions if they do not already have them
+        o	Permission that will be assigned by the script based on the two scenarios:
+            	If permission model on the Key Vault is 'Access policy’ based:
+                    It will set for current user “list” and “unwrapkey” permissions on the keys from the Key Vault.
+                    It will set for current user ‘list” and “get” permissions on secrets from the Key Vault.
+            	If permission model on the Key Vault is ‘RBAC’ based:
+                    It will assign to current user the "Key Vault Administrator" role.
 
-Related article: https://docs.microsoft.com/en-us/troubleshoot/azure/active-directory/unable-authenticate-credentials#scenario-2-your-user-account-is-enabled-for-azure-ad-multi-factor-authentication
-
-
-=======================================================================
-Prerequisites:
-
-"NuGet" PackageProvider (MinimumVersion 2.8.5.201)
-"Az.Compute" Module (Current version is 4.17.1)
-"Az.Accounts" Module (Current version is 2.6.0) ->  ADAL way not working anymore. Fortunately since Az.Accounts 2.2.0, there is Get-AzAccessToken which seems to make ADAL entirely unnecessary. Install New Az.Accounts with at least 2.2.0 version. Newest at this point 2.2.3
-"Az.Resources" Module (Current version is 4.4.0)
-"Az.KeyVault" Module
-.NET Framework (Minimum version 4.7.2)
-"Internet explorer enhanced security" needs to be disabled
-Working directory: "C:\Unlock Disk"
-
-=======================================================================
-Tested Scenarios:
-
-VMs with Managed
-
-  Vm encrypted with Single Pass (New Method) with BEK - (OS\Data disks)
-  Vm encrypted with Single Pass (New Method) with KEK - (OS\Data disks)
-
-
-  VM Generation 1 and generation 2
-
-=======================================================================
-
-Working Directory: "C:\Unlock Disk"
-
-=======================================================================
-
-Methods to retrieve the secret:
-
-From existing encrypted disks      -> This only works for Single Pass method
 
 =======================================================================
 #>
