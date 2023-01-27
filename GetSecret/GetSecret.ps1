@@ -1103,7 +1103,7 @@ if ($Mode -eq "cloudshell") {
         Write-Host "Checking if the work directory exist and if not, creating work directory c:\GetSecret... "
         Write-Host " "
         #Set\Created path for secret to be written:
-        $path = "$HOME/GetSecret/Disks/$DiskName/SecretName/$secretName/SecretVersions/$secretVersion/"
+        $path = "$HOME/GetSecret/Disks/$DiskName/SecretName/$secretName/SecretVersions/$secretVersion"
 
         # if the path does not exist, create the folders:
 
