@@ -4,6 +4,13 @@
 
 <# 
 =======================================================================
+Download Script:
+•	From a windows VM (local):
+    https://github.com/gabriel-petre/ADE/blob/main/GetSecret/GetSecret_1.0.ps1
+
+•	From Azure Cloud Shell with command:
+    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gabriel-petre/ADE/main/GetSecret/GetSecret_1.0.ps1" -OutFile $home/GetSecret_1.0.ps1
+
 How to run the PowerShell script:
 •	When used on a windows VM (local):
     o	./GetSecret_1.0.ps1 -Mode "local" -subscriptionId "sub ID" -DiskName "Encryppted disk name"
