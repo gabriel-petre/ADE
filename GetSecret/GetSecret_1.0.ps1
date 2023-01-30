@@ -410,7 +410,7 @@ Write-Host ""
         Try {
         $AdminKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
         $UserKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}"
-        Get-ItemProperty -Path $AdminKey -Name "IsInstalled" -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
+        Get-ItemProperty -Path $AdminKey -Name "IsInstalled" -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | out-null
         }
         catch {}
 
@@ -428,6 +428,11 @@ Write-Host ""
 
         Write-host ""
 
+        }
+        if ($error)
+            {Write-host ""
+            Write-host "Internet explorer is not installed. Skipping to disable Internet Explorer Enhanced Security "
+            }
         }
 
     function Get-SecretFromKV {
