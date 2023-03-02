@@ -15,7 +15,8 @@ How to run the PowerShell script:
 
 •	When used from Cloud Shell:
     o	./GetSecret_1.0.ps1 -Mode "cloudshell" -subscriptionId "sub ID" -DiskName "Encryppted disk name"
-    o./GetSecret_1.0.ps1 -Mode " cloudshell " -subscriptionId " sub ID " -DiskName " Encryppted disk name " -SecretVersion "Secret version"
+    o   ./GetSecret_1.0.ps1 -Mode " cloudshell " -subscriptionId " sub ID " -DiskName " Encryppted disk name " -SecretVersion "Secret version"
+    o	./GetSecret_1.0.ps1 -Mode "cloudshell" -subscriptionId "sub ID" -DiskName "Encryppted disk name" -UseDeviceAuthentication
 
 What it does:
     1.	Checks if prerequisites are installed. If they aren't, it will install them. (Only for "local" scenario)
@@ -73,7 +74,10 @@ Unsupported scenarios:
             	If permission model on the Key Vault is ‘RBAC’ based:
                     It will assign to current user the "Key Vault Administrator" role.
 
-
+Changes:
+On 2nd of March 
+    • removed the default use device code authentication instead of a browser control.
+    • added optional switch -UseDeviceAuthentication switch to be used only when you need the device code authentication instead of a browser control.
 =======================================================================
 #>
 
@@ -84,7 +88,9 @@ Param (
     [Parameter(Mandatory = $true)] [String] $Mode,
     [Parameter(Mandatory = $true)] [String] $subscriptionId,
     [Parameter(Mandatory = $true)] [String] $DiskName,
-    [Parameter(Mandatory = $false)] [String] $SecretVersion
+    [Parameter(Mandatory = $false)] [String] $SecretVersion,
+    [Parameter(Mandatory = $false)] [switch] $UseDeviceAuthentication
+
 )
 
 if ($Mode -eq "local") {
@@ -1073,7 +1079,10 @@ if ($Mode -eq "cloudshell") {
     #       Connect to Az Account        #
     #######################################
 
+    if($UseDeviceAuthentication)
+    {
     Connect-AzAccount -UseDeviceAuthentication
+    }
 
     Set-AzContext -Subscription $subscriptionId | out-null
 
