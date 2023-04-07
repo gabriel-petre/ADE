@@ -12,10 +12,12 @@ How to run the PowerShell script:
 •	When used on a windows VM (local):
     o	./GetSecret_1.0.ps1 -Mode "local" -subscriptionId "sub ID" -DiskName "Encryppted disk name"
     o	./GetSecret_1.0.ps1 -Mode "local" -subscriptionId " sub ID " -DiskName " Encryppted disk name " -SecretVersion "Secret version"
+    o	./GetSecret_1.0.ps1 -Mode "local" -subscriptionId " sub ID " -DiskName " Encryppted disk name " -SecretVersion "Secret version" -KekVersion "Key Version"
 
 •	When used from Cloud Shell:
     o	./GetSecret_1.0.ps1 -Mode "cloudshell" -subscriptionId "sub ID" -DiskName "Encryppted disk name"
     o   ./GetSecret_1.0.ps1 -Mode " cloudshell " -subscriptionId " sub ID " -DiskName " Encryppted disk name " -SecretVersion "Secret version"
+    o   ./GetSecret_1.0.ps1 -Mode " cloudshell " -subscriptionId " sub ID " -DiskName " Encryppted disk name " -SecretVersion "Secret version" -KekVersion "Key Version"
     o	./GetSecret_1.0.ps1 -Mode "cloudshell" -subscriptionId "sub ID" -DiskName "Encryppted disk name" -UseDeviceAuthentication
 
 What it does:
@@ -78,6 +80,13 @@ Changes:
 On 2nd of March 
     • removed the default use device code authentication instead of a browser control.
     • added optional switch -UseDeviceAuthentication switch to be used only when you need the device code authentication instead of a browser control.
+
+On 7th of April
+    Added the optional parameter -SecretVersion
+    Added the optional parameter -KekVersion
+
+    You can manually specify what key or secret version to use. This is useful if the disk is using an old key or secret version which expired or is disabled and it is still in encryption settings of the disk...
+
 =======================================================================
 #>
 
@@ -89,6 +98,7 @@ Param (
     [Parameter(Mandatory = $true)] [String] $subscriptionId,
     [Parameter(Mandatory = $true)] [String] $DiskName,
     [Parameter(Mandatory = $false)] [String] $SecretVersion,
+    [Parameter(Mandatory = $false)] [String] $KekVersion,
     [Parameter(Mandatory = $false)] [switch] $UseDeviceAuthentication
 
 )
@@ -554,7 +564,9 @@ Write-Host ""
 
             #get KEK name and version
             $KekName = $KeKUrl.Split('/')[4]
-            $KekVersion = $KeKUrl.Split('/')[5]
+
+            if (!$KekVersion)
+            {$KekVersion = $KeKUrl.Split('/')[5]}
 
             #List Encryption settings of the managed disk selected:
             Write-host ""
@@ -1202,7 +1214,9 @@ if ($Mode -eq "cloudshell") {
 
             #get KEK name and version
             $KekName = $KeKUrl.Split('/')[4]
-            $KekVersion = $KeKUrl.Split('/')[5]
+
+            if (!$KekVersion)
+            {$KekVersion = $KeKUrl.Split('/')[5]}
 
             #List Encryption settings of the managed disk selected:
             Write-host ""
@@ -1663,4 +1677,3 @@ if ($Mode -eq "cloudshell") {
 
     Get-SecretFromKV
 }
-
