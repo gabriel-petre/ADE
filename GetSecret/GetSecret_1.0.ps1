@@ -466,7 +466,7 @@ Write-Host ""
 
 
         #Get Disk RG Name:
-        $DiskRGName = (Get-AzResource -Name $DiskName).ResourceGroupName
+        [String]$DiskRGName = (Get-AzResource -Name $DiskName).ResourceGroupName
 
         #Get Disk properties:
         $Disk = Get-AzDisk -ResourceGroupName $DiskRGName -Name $DiskName;
