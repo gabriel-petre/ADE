@@ -121,7 +121,7 @@ if ($Mode -eq "local") {
 
         Set-AzContext -Subscription $subscriptionId | out-null
         Write-Host""
-        Write-Host "Subscription with ID '$subscriptionId ' was selected"
+        Write-Host "Subscription with ID '$subscriptionId' was selected"
         Write-Host""
 
     }
@@ -1099,7 +1099,7 @@ if ($Mode -eq "cloudshell") {
     Set-AzContext -Subscription $subscriptionId | out-null
 
     Write-Host""
-    Write-Host "Subscription with ID '$subscriptionId ' was selected"
+    Write-Host "Subscription with ID '$subscriptionId' was selected"
     Write-Host""
 
 
